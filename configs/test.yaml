@@ -1,1 +1,10 @@
-pdf_path: "/home/jacktran/Downloads/draft/qnu.pdf"
+pdf_path: 
+  - "/home/jacktran/RAG/learning/files/3ac90064-2e23-43cc-9e7f-6b9ea653b552.pdf"
+  - "/home/jacktran/RAG/learning/files/5fa639a7-4e66-495c-9e6f-22732ac748f4.pdf"
+  - "/home/jacktran/RAG/learning/files/491b8725-5abe-4151-b38b-c0dd1b7f7420.pdf"
+  - "/home/jacktran/RAG/learning/files/927ac79f-30b6-420c-af2f-9229ba129bdf.pdf"
+  - "/home/jacktran/RAG/learning/files/5641fb20-d894-499c-8b68-8477d24c992f.pdf"
+  - "/home/jacktran/RAG/learning/files/Baocaocapnhat_VPB_Q3_VN.pdf"
+  - "/home/jacktran/RAG/learning/files/download-with-token (1).pdf"
+  - "/home/jacktran/RAG/learning/files/SSI_Q3_25_a82298dac6.pdf"
+  - "/home/jacktran/RAG/learning/files/VCB_cap-nhat_ACBS_10.12.2025-VN.pdf"
