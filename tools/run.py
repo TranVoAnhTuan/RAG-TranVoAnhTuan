@@ -3,7 +3,7 @@ from pathlib import Path
 import yaml
 import click
 
-from pipelines import pdf_ingestion_pipeline
+from pipelines import pdf_ingestion_pipeline, feature_engineering
 
 
 @click.command()
@@ -19,6 +19,12 @@ from pipelines import pdf_ingestion_pipeline
     help="PDF ingestion config filename",
 )
 @click.option(
+    "--run-feature-engineering",
+    is_flag=True,
+    default=False,
+    help="Whether to run the FE pipeline.",
+)
+@click.option(
     "--no-cache",
     is_flag=True,
     default=False,
@@ -27,9 +33,12 @@ from pipelines import pdf_ingestion_pipeline
 def main(
     run_extract_pdf: bool,
     pdf_config_filename: str,
-    no_cache: bool,
+    run_feature_engineering: bool = False,
+    no_cache: bool = False,
 ):
-    assert run_extract_pdf, "Please specify --run-extract-pdf"
+    assert (
+        run_extract_pdf or run_feature_engineering
+    ), "Please specify an action to run."
 
     pipeline_args = {
         "enable_cache": not no_cache,
@@ -55,6 +64,13 @@ def main(
         }
 
         pdf_ingestion_pipeline.with_options(**pipeline_args)(**run_args_pdf)
+
+    if run_feature_engineering:
+        run_args_fe = {}
+        pipeline_args["run_name"] = (
+            f"feature_engineering_run_{dt.now().strftime('%Y_%m_%d_%H_%M_%S')}"
+        )
+        feature_engineering.with_options(**pipeline_args)(**run_args_fe)
 
 
 if __name__ == "__main__":
