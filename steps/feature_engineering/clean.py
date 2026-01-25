@@ -1,0 +1,26 @@
+from typing_extensions import Annotated
+from zenml import get_step_context, step
+
+from llm_engineering.application.preprocessing import CleaningDispatcher
+from llm_engineering.domain.cleaned_documents import CleanedDocument
+
+
+@step
+def clean_documents(
+    documents: Annotated[list, "raw_documents"],
+) -> Annotated[list, "cleaned_documents"]:
+    cleaned_documents = []
+    for document in documents:
+        cleaned_document = CleaningDispatcher.dispatch(document)
+        cleaned_documents.append(cleaned_document)
+
+    step_context = get_step_context()
+    step_context.add_output_metadata(
+        output_name="cleaned_documents", metadata=_get_metadata(cleaned_documents)
+    )
+
+    return cleaned_documents
+
+
+def _get_metadata(cleaned_documents: list[CleanedDocument]) -> dict:
+    return {"num_documents": len(cleaned_documents)}
