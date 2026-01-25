@@ -1,16 +1,17 @@
 from abc import ABC
-from typing import Optional
 
-from pydantic import UUID4, Field
+from pydantic import Field
 
 from .base import NoSQLBaseDocument
 from .types import DataCategory
 
-class PDFTextDocument(NoSQLBaseDocument):
-    path: str = Field(description="Absolute path to the PDF file")
+
+class Document(NoSQLBaseDocument, ABC):
     text: str
+
+
+class PDFTextDocument(Document):
+    path: str = Field(description="Absolute path to the PDF file")
 
     class Settings:
         name = DataCategory.PDF_TEXTS
-
-
