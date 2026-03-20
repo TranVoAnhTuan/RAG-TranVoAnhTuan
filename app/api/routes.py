@@ -4,6 +4,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from pipelines.ingestion import process_pdf_pipeline
 from app.agents.demo_agent import DemoAgent
+import anyio
 
 router = APIRouter()
 agent = DemoAgent()
@@ -12,7 +13,7 @@ class QueryRequest(BaseModel):
     query: str
 
 @router.post("/upload")
-def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(file: UploadFile = File(...)):
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Chỉ hỗ trợ file PDF.")
     
@@ -25,7 +26,8 @@ def upload_pdf(file: UploadFile = File(...)):
         
     try:
         # Chạy ZenML Pipeline
-        process_pdf_pipeline(temp_file_path)
+        # process_pdf_pipeline(temp_file_path)
+        await anyio.to_thread.run_sync(process_pdf_pipeline, temp_file_path)
         return {"message": "Tài liệu đã được xử lý và lưu vào Qdrant thành công!"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -35,9 +37,9 @@ def upload_pdf(file: UploadFile = File(...)):
             os.remove(temp_file_path)
 
 @router.post("/chat")
-def chat_with_agent(request: QueryRequest):
+async def chat_with_agent(request: QueryRequest):
     try:
-        answer = agent.ask(request.query)
+        answer = await agent.ask(request.query)
         return {"answer": answer}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
