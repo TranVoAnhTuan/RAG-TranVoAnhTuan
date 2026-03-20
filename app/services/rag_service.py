@@ -101,32 +101,4 @@ class RAGService:
             
         return search_result
 
-        # # 5. Format results
-        # search_result = ""
-        # for i, doc in enumerate(top_5_docs):
-        #     header = doc.payload.get("Header_2")
-        #     expanded_text = ''
-        #     if header:
-        #         try:
-        #             points, _ = self.client.scroll(
-        #                 collection_name=settings.QDRANT_COLLECTION_NAME,
-        #                 scroll_filter=models.Filter(
-        #                     must=[
-        #                         models.FieldCondition(
-        #                             key="Header_2",
-        #                             match=models.MatchValue(value=header)
-        #                         ) 
-        #                     ]
-        #                 ),
-        #                 limit=10,
-        #                 with_payload=True
-        #             )
-
-        #             expanded_text = "\n".join(
-        #                 [p.payload.get("content", "") for p in points]
-        #             )
-        #         except Exception as e:
-        #             expanded_text = f"Lỗi khi lấy Expand: {str(e)}"
-        #     search_result += f"Result {i+1}: {doc.payload['content']} \n \t Expand: {expanded_text} \n"
-            
-        # return search_result
+        
