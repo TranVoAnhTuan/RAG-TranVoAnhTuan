@@ -14,13 +14,13 @@ from app.core.config import settings
 rag_service = RAGService()
 
 @tool
-def search_document_knowledge(query: str) -> str:
+async def search_document_knowledge(query: str) -> str:
     """
     Công cụ tra cứu cơ sở dữ liệu tài liệu. 
     LƯU Ý QUAN TRỌNG: Chỉ truyền vào MỘT ý định hoặc MỘT khía cạnh duy nhất cho mỗi lần gọi. 
     Nếu câu hỏi có nhiều ý, hãy gọi công cụ này nhiều lần (có thể gọi song song) để tìm kiếm riêng biệt từng ý.
     """
-    return rag_service.retrieve_and_rerank(query)
+    return await rag_service.retrieve_and_rerank(query)
 
 class DemoAgent:
     def __init__(self):
@@ -55,25 +55,31 @@ class DemoAgent:
             checkpointer = self.memory
         )
 
-    def ask(self, query: str, thread_id: str = "1") -> str:
+    async def ask(self, query: str, thread_id: str = "1") -> str:
         final_answer = ""
         config = {"configurable": {"thread_id": thread_id}}
 
-        # Sử dụng stream để theo dõi từng bước
-        for step in self.agent.stream(
-            {"messages": [{"role": "user", "content": query}]},
-            config=config,
-            stream_mode="values", # Trả về toàn bộ state sau mỗi bước
-        ):
-            # Lấy tin nhắn mới nhất vừa được thêm vào state
-            latest_msg = step["messages"][-1]
-            
-            # In ra để debug (chỉ in tin nhắn mới nhất của bước đó)
-            latest_msg.pretty_print()
+        try:
+            async for step in self.agent.astream(
+                {"messages": [{"role": "user", "content": query}]},
+                config=config,
+                stream_mode="values",
+            ):
+                messages = step.get("messages", [])
+                if not messages:
+                    continue
+                
+                latest_msg = messages[-1]
+                
+                # Debug message
+                latest_msg.pretty_print()
 
-            # Kiểm tra nếu là tin nhắn của AI và có nội dung trả lời (không phải gọi tool)
-            if latest_msg.type == "ai" and latest_msg.content:
-                final_answer = latest_msg.content
+                # Kiểm tra tin nhắn cuối cùng từ AI
+                if latest_msg.type == "ai" and latest_msg.content and not latest_msg.tool_calls:
+                    final_answer = latest_msg.content
+        except Exception as e:
+            print(f"Error during agent execution: {e}")
+            return f"Đã xảy ra lỗi: {str(e)}"
 
         return final_answer or "Không có câu trả lời."
 
