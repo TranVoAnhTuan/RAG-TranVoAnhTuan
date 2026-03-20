@@ -1,19 +1,21 @@
-from qdrant_client import QdrantClient
+from qdrant_client import AsyncQdrantClient # Sử dụng bản async
 from qdrant_client.models import VectorParams, Distance, SparseVectorParams
 from app.core.config import settings
 
 class QdrantDatabase:
     def __init__(self):
-        self.client = QdrantClient(
+        # Khởi tạo client async
+        self.client = AsyncQdrantClient(
             url=settings.QDRANT_URL,
             api_key=settings.QDRANT_API_KEY
         )
         self.collection_name = settings.QDRANT_COLLECTION_NAME
-        self._ensure_collection_exists()
 
-    def _ensure_collection_exists(self):
-        if not self.client.collection_exists(self.collection_name):
-            self.client.create_collection(
+    async def _ensure_collection_exists(self):
+        # Chuyển thành async method
+        exists = await self.client.collection_exists(self.collection_name)
+        if not exists:
+            await self.client.create_collection(
                 collection_name=self.collection_name,
                 vectors_config={
                     "dense": VectorParams(size=1024, distance=Distance.COSINE) 
@@ -23,5 +25,5 @@ class QdrantDatabase:
                 }
             )
 
-    def get_client(self) -> QdrantClient:
+    def get_client(self) -> AsyncQdrantClient:
         return self.client
