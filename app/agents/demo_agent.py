@@ -22,42 +22,6 @@ def search_document_knowledge(query: str) -> str:
     """
     return rag_service.retrieve_and_rerank(query)
 
-# class DemoAgent:
-#     def __init__(self):
-#         self.llm = ChatGroq(
-#             model="llama-3.3-70b-versatile",
-#             temperature=0,
-#             api_key=settings.API_KEY 
-#         )
-#         self.tools = [search_document_knowledge]
-        
-#         self.prompt = ChatPromptTemplate.from_messages([
-#             ("system", 
-#              "Bạn là một trợ lý thông minh. Nhiệm vụ của bạn là trả lời câu hỏi của người dùng dựa trên tài liệu đã cung cấp. "
-#              "BẠN BẮT BUỘC PHẢI DÙNG CÔNG CỤ 'search_document_knowledge' để tìm thông tin trước khi trả lời.\n\n"
-#              "CHIẾN LƯỢC TÌM KIẾM ĐA Ý ĐỊNH: "
-#              "Nếu câu hỏi của người dùng chứa nhiều ý, nhiều khía cạnh hoặc nhiều chủ đề khác nhau, "
-#              "BẠN PHẢI TỰ ĐỘNG CHIA NHỎ CÂU HỎI VÀ GỌI CÔNG CỤ NHIỀU LẦN cho từng ý đó. "
-#              "Tuyệt đối không gộp chung nhiều ý phức tạp vào một lần gọi duy nhất.\n\n"
-#              "Sau khi đã thu thập đủ thông tin từ các lần tìm kiếm, hãy tổng hợp lại thành câu trả lời chính xác, mạch lạc bằng tiếng Việt. "
-#              "Nếu kết quả tìm kiếm không có thông tin, hãy nói rõ là tài liệu không đề cập đến."),
-#             ("user", "{input}"),
-#             MessagesPlaceholder(variable_name="agent_scratchpad"),
-#         ])
-        
-#         self.agent = create_tool_calling_agent(self.llm, self.tools, self.prompt)
-#         self.executor = AgentExecutor(agent=self.agent, tools=self.tools, verbose=True)
-
-#         self.prompt = """
-
-#                     """
-
-#     def ask(self, query: str) -> str:
-#         response = self.executor.invoke({"input": query})
-#         return response["output"]
-
-
-
 class DemoAgent:
     def __init__(self):
         self.model = ChatGroq(
@@ -65,7 +29,7 @@ class DemoAgent:
             temperature=0,
             api_key=settings.API_KEY
         )
-
+        self.memory = InMemorySaver()
         self.tools = [search_document_knowledge]
 
         self.system_prompt = """
@@ -88,24 +52,29 @@ class DemoAgent:
             model=self.model,
             tools=self.tools,
             system_prompt=self.system_prompt,
-            checkpointer=InMemorySaver(),
-
+            checkpointer = self.memory
         )
 
-    def ask(self, query: str) -> str:
+    def ask(self, query: str, thread_id: str = "1") -> str:
         final_answer = ""
+        config = {"configurable": {"thread_id": thread_id}}
 
+        # Sử dụng stream để theo dõi từng bước
         for step in self.agent.stream(
             {"messages": [{"role": "user", "content": query}]},
-            stream_mode="values",
+            config=config,
+            stream_mode="values", # Trả về toàn bộ state sau mỗi bước
         ):
-            for msg in step["messages"]:
-                msg.pretty_print()
+            # Lấy tin nhắn mới nhất vừa được thêm vào state
+            latest_msg = step["messages"][-1]
+            
+            # In ra để debug (chỉ in tin nhắn mới nhất của bước đó)
+            latest_msg.pretty_print()
 
-                if msg.type == "ai" and msg.content:
-                    final_answer = msg.content
+            # Kiểm tra nếu là tin nhắn của AI và có nội dung trả lời (không phải gọi tool)
+            if latest_msg.type == "ai" and latest_msg.content:
+                final_answer = latest_msg.content
 
         return final_answer or "Không có câu trả lời."
-    
 
 
