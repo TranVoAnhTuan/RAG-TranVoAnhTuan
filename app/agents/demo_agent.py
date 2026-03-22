@@ -1,5 +1,7 @@
 from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
-from langchain_groq import ChatGroq
+# from langchain_groq import ChatGroq
+from langchain_ollama import ChatOllama
+
 from langchain.tools import tool
 from langchain.agents import AgentState, create_agent
 from langgraph.checkpoint.memory import InMemorySaver  
@@ -24,10 +26,10 @@ async def search_document_knowledge(query: str) -> str:
 
 class DemoAgent:
     def __init__(self):
-        self.model = ChatGroq(
-            model="llama-3.3-70b-versatile",
+        self.model = ChatOllama(
+            model="llama3.2:1b",
             temperature=0,
-            api_key=settings.API_KEY
+            base_url="http://localhost:11434"
         )
         self.memory = InMemorySaver()
         self.tools = [search_document_knowledge]
