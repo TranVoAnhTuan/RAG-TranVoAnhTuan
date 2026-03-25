@@ -2,9 +2,8 @@ import os
 import shutil
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from pydantic import BaseModel
-from pipelines.ingestion import process_pdf_pipeline
+from pipelines.langgraph_ingestion import ingestion_app 
 from app.agents.demo_agent import DemoAgent
-import anyio
 
 router = APIRouter()
 agent = DemoAgent()
@@ -15,9 +14,8 @@ class QueryRequest(BaseModel):
 @router.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)):
     if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Chỉ hỗ trợ file PDF.")
+        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     
-    # Lưu file tạm thời để ZenML xử lý
     os.makedirs("temp_files", exist_ok=True)
     temp_file_path = f"temp_files/{file.filename}"
     
@@ -25,16 +23,15 @@ async def upload_pdf(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buffer)
         
     try:
-        # Chạy ZenML Pipeline
-        # process_pdf_pipeline(temp_file_path)
-        await anyio.to_thread.run_sync(process_pdf_pipeline, temp_file_path)
-        return {"message": "Tài liệu đã được xử lý và lưu vào Qdrant thành công!"}
+        initial_state = {"file_path": temp_file_path}
+        final_state = await ingestion_app.ainvoke(initial_state)
+        
+        return {
+            "message": final_state["status"],
+            "tables": final_state.get("tables", [])
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        # Dọn dẹp file tạm
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
 
 @router.post("/chat")
 async def chat_with_agent(request: QueryRequest):
