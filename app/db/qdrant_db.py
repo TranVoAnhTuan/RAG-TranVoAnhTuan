@@ -4,15 +4,14 @@ from app.core.config import settings
 
 class QdrantDatabase:
     def __init__(self):
-        # Khởi tạo client async
         self.client = AsyncQdrantClient(
             url=settings.QDRANT_URL,
-            api_key=settings.QDRANT_API_KEY
+            api_key=settings.QDRANT_API_KEY,
+            timeout= 120
         )
         self.collection_name = settings.QDRANT_COLLECTION_NAME
 
     async def _ensure_collection_exists(self):
-        # Chuyển thành async method
         exists = await self.client.collection_exists(self.collection_name)
         if not exists:
             await self.client.create_collection(
