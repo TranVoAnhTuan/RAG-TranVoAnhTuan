@@ -1,15 +1,11 @@
-from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
-# from langchain_groq import ChatGroq
 from langchain_ollama import ChatOllama
 
 from langchain.tools import tool
 from langchain.agents import AgentState, create_agent
 from langgraph.checkpoint.memory import InMemorySaver  
 
-from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
 import os
 
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from app.services.rag_service import RAGService
 from app.core.config import settings
 
@@ -30,7 +26,8 @@ class DemoAgent:
             # model="llama3.2:1b",
             model= "qwen3.5:2b",
             temperature=0,
-            base_url="http://localhost:11434"
+            base_url="http://localhost:11434",
+            keep_alive="0s"
         )
         self.memory = InMemorySaver()
         self.tools = [search_document_knowledge]
@@ -91,8 +88,8 @@ class DemoAgent:
                     final_answer = latest_msg.content
         except Exception as e:
             print(f"Error during agent execution: {e}")
-            return f"Đã xảy ra lỗi: {str(e)}"
+            return f"An error occurred: {str(e)}"
 
-        return final_answer or "Không có câu trả lời."
+        return final_answer or "No answer found."
 
 
