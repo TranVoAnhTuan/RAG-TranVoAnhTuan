@@ -27,8 +27,7 @@ def split_by_token_with_paragraph(text, tokenizer, max_tokens=512):
 
 def chunk_node(state: IngestionState):
     print("Loading Tokenizer for chunking...")
-    # Load tokenizer cục bộ
-    # tokenizer = AutoTokenizer.from_pretrained(settings.DENSE_MODEL_NAME, trust_remote_code=True)
+    # Load tokenizer locally
     tokenizer = model_manager.get_tokenizer()
     
     text = state["cleaned_text"]
@@ -48,7 +47,6 @@ def chunk_node(state: IngestionState):
                 "Header_2": doc.metadata.get("Header_2"),
             })
 
-    # Dọn dẹp RAM
     print("Cleaning Tokenizer RAM...")
     del tokenizer
     gc.collect()

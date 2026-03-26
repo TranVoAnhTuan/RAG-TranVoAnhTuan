@@ -7,13 +7,21 @@ from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from .state import IngestionState
+import torch
+
+def print_vram(step_name):
+    """Helper function to print VRAM capacity"""
+    if torch.cuda.is_available():
+        allocated = torch.cuda.memory_allocated() / (1024 ** 2)
+        reserved = torch.cuda.memory_reserved() / (1024 ** 2)
+        print(f"📊 [{step_name}] VRAM Allocated: {allocated:.2f} MB | Reserved: {reserved:.2f} MB")
 
 def _process_with_docling(file_path: str) -> dict:
     print("Loading Docling...")
     pipeline_options = PdfPipelineOptions()
     pipeline_options.do_ocr = True
     pipeline_options.do_table_structure = True
-    pipeline_options.accelerator_options = AcceleratorOptions(num_threads=6, device="cpu")
+    pipeline_options.accelerator_options = AcceleratorOptions(num_threads= 6, device="cuda")
 
     converter = DocumentConverter(
         format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
@@ -34,11 +42,15 @@ def _process_with_docling(file_path: str) -> dict:
 
     markdown_text = doc.export_to_markdown()
 
-    # Dọn dẹp RAM
     print("Cleaning Docling RAM...")
     del converter, result, doc
     gc.collect()
 
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache() 
+        torch.cuda.ipc_collect()
+        
+    print_vram("4. AFTER CLEANUP")
     return {"markdown": markdown_text, "tables": tables_data}
 
 async def extract_node(state: IngestionState):

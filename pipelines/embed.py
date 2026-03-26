@@ -2,8 +2,6 @@ import uuid
 import asyncio
 import gc
 import torch
-from sentence_transformers import SentenceTransformer
-from fastembed import SparseTextEmbedding
 from qdrant_client import models
 from qdrant_client.models import PointStruct, SparseVector
 from app.db.qdrant_db import QdrantDatabase
@@ -14,11 +12,8 @@ from app.core.model_manager import model_manager
 async def embed_and_load_node(state: IngestionState):
     chunks = state["chunks"]
     
-    print("Loading Embedding Models...")
+    print("Loading Sparse Embedding Model (CPU)...")
     sparse_model = model_manager.get_sparse_model()
-    dense_model = model_manager.get_dense_model()
-    # sparse_model = SparseTextEmbedding(model_name=settings.SPARSE_MODEL_NAME)
-    # dense_model = SentenceTransformer(settings.DENSE_MODEL_NAME, trust_remote_code=True)
     
     db = QdrantDatabase()
     client = db.get_client()
@@ -30,15 +25,19 @@ async def embed_and_load_node(state: IngestionState):
         field_schema=models.PayloadSchemaType.KEYWORD
     )
 
-    # Gom texts để encode batch cho nhanh
+    # Group texts for faster batch encoding
     texts = [item["content"] for item in chunks if item["content"]]
     
     if texts:
         print(f"Encoding {len(texts)} chunks...")
-        # Dense
-        dense_embeddings = dense_model.encode(texts, batch_size=32, normalize_embeddings=True)
-        # Sparse
+        
+        # 1. Encode Sparse (On CPU)
         sparse_embeddings = list(sparse_model.embed(texts))
+        
+        # 2. Encode Dense (BORROW GPU)
+        # Start borrowing VRAM -> Encode -> Automatically release VRAM when exiting the "with" block
+        with model_manager.use_dense_model_on_gpu() as gpu_dense_model:
+            dense_embeddings = gpu_dense_model.encode(texts, batch_size=8, normalize_embeddings=True)
 
         points = []
         for i, item in enumerate([c for c in chunks if c["content"]]):
@@ -65,13 +64,5 @@ async def embed_and_load_node(state: IngestionState):
                 batch = points[i : i + batch_size]
                 await client.upsert(collection_name=settings.QDRANT_COLLECTION_NAME, points=batch)
                 await asyncio.sleep(0.1) 
-
-    # Dọn dẹp RAM / VRAM cực mạnh
-    print("Cleaning Embedding Models RAM/VRAM...")
-    # del dense_model
-    # del sparse_model
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
 
     return {"status": f"The document was processed, and {len(texts)} chunks were saved to Qdrant successfully!"}
