@@ -94,8 +94,16 @@ class RAGService:
             original_idx = result['index']
             top_docs.append(merged_docs[original_idx])
 
-        search_result = ""
+        search_result = "SEARCH RESULTS:\n"
         for i, doc in enumerate(top_docs):
-            search_result += f"Result {i+1}: {doc.payload.get('content', '')} citation: (Header 1: {doc.payload.get('Header_1', '')} and Header 2: {doc.payload.get('Header_2', '')} )\n"
+            h1 = doc.payload.get('Header_1', '')
+            h2 = doc.payload.get('Header_2', '')
+            f_url = doc.payload.get('file_url', '')
+            content = doc.payload.get('content', '')
             
+            search_result += f"""
+--- Result {i+1} ---
+CONTENT: {content}
+METADATA: {{"Header_1": "{h1}", "Header_2": "{h2}", "file_url": "{f_url}"}}
+"""
         return search_result

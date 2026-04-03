@@ -40,7 +40,6 @@ def render_sidebar():
                             data = response.json()
                             st.session_state.processing_status = "completed"
 
-                            # Save history (avoid duplicates)
                             if uploaded_file.name not in st.session_state.uploaded_files_info:
                                 st.session_state.uploaded_files_info.append(uploaded_file.name)
 
@@ -55,7 +54,6 @@ def render_sidebar():
                         st.error("Cannot connect to FastAPI backend.")
 
         st.divider()
-
         st.subheader("Status")
 
         if st.session_state.processing_status == "not_started":
@@ -65,7 +63,6 @@ def render_sidebar():
         elif st.session_state.processing_status == "error":
             st.error("Error occurred")
 
-        # NEW: Uploaded files history
         st.divider()
         st.subheader("Uploaded Files History")
 
@@ -79,6 +76,21 @@ def render_chat():
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
+            
+            if message.get("citations"):
+                with st.expander("📚 Citations"):
+                    for i, cite in enumerate(message["citations"], 1):
+                        h1 = cite.get('Header_1', 'Unknown Header')
+                        h2 = cite.get('Header_2', '')
+                        file_url = cite.get('file_url', '')
+                        
+                        header_text = f"**{i}. {h1}**"
+                        if h2: 
+                            header_text += f" - *{h2}*"
+                            
+                        st.markdown(header_text)
+                        if file_url:
+                            st.markdown(f"> 🔗 [View PDF]({file_url})")
 
     with bottom():
         prompt = st.chat_input("Ask a question about your documents or anything else...")
@@ -89,13 +101,44 @@ def render_chat():
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
+            with st.spinner("Searching and synthesizing answer..."):
                 try:
                     res = requests.post(f"{API_URL}/chat", json={"query": prompt})
                     if res.status_code == 200:
-                        answer = res.json().get("answer", "Server error")
-                        st.markdown(answer)
-                        st.session_state.messages.append({"role": "assistant", "content": answer})
+                        raw_answer = res.json().get("answer", {})
+                        
+                        if isinstance(raw_answer, dict):
+                            main_response = raw_answer.get("response", "No answer available.")
+                            citations = raw_answer.get("citations", [])
+                            
+                            st.markdown(main_response)
+                            if citations:
+                                with st.expander("📚 Citations"):
+                                    for i, cite in enumerate(citations, 1):
+                                        h1 = cite.get('Header_1', 'Unknown Header')
+                                        h2 = cite.get('Header_2', '')
+                                        file_url = cite.get('file_url', '')
+                                        
+                                        header_text = f"**{i}. {h1}**"
+                                        if h2: 
+                                            header_text += f" - *{h2}*"
+                                            
+                                        st.markdown(header_text)
+                                        if file_url:
+                                            st.markdown(f"> 🔗 [View PDF]({file_url})")
+                            
+                            st.session_state.messages.append({
+                                "role": "assistant", 
+                                "content": main_response,
+                                "citations": citations
+                            })
+                        else:
+                            st.markdown(str(raw_answer))
+                            st.session_state.messages.append({
+                                "role": "assistant", 
+                                "content": str(raw_answer)
+                            })
+                            
                     else:
                         st.error("Agent error")
                 except requests.exceptions.ConnectionError:

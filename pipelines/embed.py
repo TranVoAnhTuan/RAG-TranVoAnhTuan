@@ -11,6 +11,7 @@ from app.core.model_manager import model_manager
 
 async def embed_and_load_node(state: IngestionState):
     chunks = state["chunks"]
+    minio_url = state.get("minio_url")
     
     print("Loading Sparse Embedding Model (CPU)...")
     sparse_model = model_manager.get_sparse_model()
@@ -53,7 +54,8 @@ async def embed_and_load_node(state: IngestionState):
                 payload={
                     "content": item["content"],
                     "Header_1": item.get("Header_1"),
-                    "Header_2": item.get("Header_2")
+                    "Header_2": item.get("Header_2"),
+                    "file_url": minio_url   
                 }
             )
             points.append(point)
