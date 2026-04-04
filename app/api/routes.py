@@ -4,12 +4,15 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from pipelines.langgraph_ingestion import ingestion_app 
 from app.agents.demo_agent import DemoAgent
+import traceback
+
 
 router = APIRouter()
 agent = DemoAgent()
 
 class QueryRequest(BaseModel):
     query: str
+    thread_id: str = "default_thread"
 
 @router.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)):
@@ -52,7 +55,8 @@ async def upload_pdf(file: UploadFile = File(...)):
 @router.post("/chat")
 async def chat_with_agent(request: QueryRequest):
     try:
-        answer = await agent.ask(request.query)
+        answer = await agent.ask(request.query, thread_id= request.thread_id)
         return {"answer": answer}
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
