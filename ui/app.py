@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import os
+import uuid 
 from streamlit_extras.bottom_container import bottom
 
 API_URL = "http://127.0.0.1:8000/api/v1"
@@ -10,6 +11,9 @@ st.set_page_config(
 )
 
 def initialize_session_state():
+    if "thread_id" not in st.session_state:
+        st.session_state.thread_id = str(uuid.uuid4())
+        
     if "messages" not in st.session_state:
         st.session_state.messages = []
     if "processing_status" not in st.session_state:
@@ -54,6 +58,15 @@ def render_sidebar():
                         st.error("Cannot connect to FastAPI backend.")
 
         st.divider()
+        
+        if st.button("New Chat", use_container_width=True):
+            st.session_state.messages = []
+            st.session_state.thread_id = str(uuid.uuid4())
+            st.rerun()
+
+        st.caption(f"Current Thread ID: {st.session_state.thread_id}")
+        
+        st.divider()
         st.subheader("Status")
 
         if st.session_state.processing_status == "not_started":
@@ -78,7 +91,7 @@ def render_chat():
             st.markdown(message["content"])
             
             if message.get("citations"):
-                with st.expander("📚 Citations"):
+                with st.expander("📝 Citations"):
                     for i, cite in enumerate(message["citations"], 1):
                         h1 = cite.get('Header_1', 'Unknown Header')
                         h2 = cite.get('Header_2', '')
@@ -103,7 +116,12 @@ def render_chat():
         with st.chat_message("assistant"):
             with st.spinner("Searching and synthesizing answer..."):
                 try:
-                    res = requests.post(f"{API_URL}/chat", json={"query": prompt})
+                    payload = {
+                        "query": prompt,
+                        "thread_id": st.session_state.thread_id
+                    }
+                    res = requests.post(f"{API_URL}/chat", json=payload)
+                    
                     if res.status_code == 200:
                         raw_answer = res.json().get("answer", {})
                         
@@ -113,7 +131,7 @@ def render_chat():
                             
                             st.markdown(main_response)
                             if citations:
-                                with st.expander("📚 Citations"):
+                                with st.expander("📝 Citations"):
                                     for i, cite in enumerate(citations, 1):
                                         h1 = cite.get('Header_1', 'Unknown Header')
                                         h2 = cite.get('Header_2', '')
