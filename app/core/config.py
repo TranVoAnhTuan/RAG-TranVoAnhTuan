@@ -14,7 +14,7 @@ class Settings:
     MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "rag-agent")
     MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "89898989")
     MINIO_BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME", "pdfs")
-    # MONGODB_HOST = os.getenv("DATABASE_HOST")
+    MONGODB_HOST = os.getenv("DATABASE_HOST")
     
     HUGGINGFACE_ACCESS_TOKEN = os.getenv("HUGGINGFACE_ACCESS_TOKEN")
 
