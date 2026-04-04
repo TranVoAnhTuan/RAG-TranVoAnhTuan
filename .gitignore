@@ -5,3 +5,7 @@ run.txt
 *.pem
 *.pdf
 .vscode/
+minio/
+*.db
+*.txt
+docker-compose.yml
