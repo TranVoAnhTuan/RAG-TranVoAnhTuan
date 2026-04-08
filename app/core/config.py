@@ -6,6 +6,9 @@ load_dotenv()
 class Settings:
     API_KEY = os.getenv("API_KEY")
 
+    LLM_MODEL = os.getenv("LLM_MODEL","qwen3.5:2b")
+    BASE_URL = os.getenv("BASE_URL")
+
     QDRANT_URL = os.getenv("QDRANT_URL")
     QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
     QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME")
