@@ -1,7 +1,7 @@
 import json
 import re
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from langchain_ollama import ChatOllama
 from langchain.tools import tool
@@ -13,7 +13,6 @@ from langgraph.graph.message import REMOVE_ALL_MESSAGES
 
 from app.services.rag_service import RAGService
 from app.core.config import settings
-from app.agents.document_info import DocumentInfo
 from app.agents.prompt import SYSTEM_PROMPT
 
 rag_service = RAGService()
@@ -24,8 +23,7 @@ class CustomAgentState(AgentState):
 @before_model
 def trim_messages(state: CustomAgentState, runtime: Any) -> dict | None:
     """
-    Keep the context concise by retaining only the system message (0)
-    and the 4 most recent messages in the conversation history.
+    Keep the context concise by retaining only the system message (0) and the 4 most recent messages in the conversation history.
     """
     messages = state["messages"]
     
@@ -47,17 +45,16 @@ def trim_messages(state: CustomAgentState, runtime: Any) -> dict | None:
 async def search_document_knowledge(query: str) -> str:
     """
     Search for information in the document knowledge base.
-    IMPORTANT GUIDELINE: If called a 2nd or 3rd time, the query must represent
-    a completely different approach or a broader topic.
+    IMPORTANT GUIDELINE: If called a 2nd or 3rd time, the query must represent a completely different approach or a broader topic.
     """
     return await rag_service.retrieve_and_rerank(query)
 
 class DemoAgent:
     def __init__(self):
         self.model = ChatOllama(
-            model="qwen3.5:2b", 
+            model=settings.LLM_MODEL, 
             temperature=0,
-            base_url="http://localhost:11434",
+            base_url=settings.BASE_URL,
             keep_alive="0s",
             format="json"
         )
@@ -94,14 +91,8 @@ class DemoAgent:
             
             final_message = messages[-1]
             final_answer = ""
-
-            if hasattr(final_message, "tool_calls") and final_message.tool_calls:
-                for t in final_message.tool_calls:
-                    if t["name"] in ["DocumentInfo"]:
-                        final_answer = t["args"]
-                        break
-            
-            if not final_answer and hasattr(final_message, "content") and final_message.content:
+          
+            if hasattr(final_message, "content") and final_message.content:
                 final_answer = final_message.content
 
             if isinstance(final_answer, str):
