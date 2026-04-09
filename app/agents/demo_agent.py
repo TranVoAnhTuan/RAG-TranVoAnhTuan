@@ -14,30 +14,62 @@ from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from app.services.rag_service import RAGService
 from app.core.config import settings
 from app.agents.prompt import SYSTEM_PROMPT
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 rag_service = RAGService()
 
-class CustomAgentState(AgentState):
-    important_metadata: Dict[str, Any]
-
 @before_model
-def trim_messages(state: CustomAgentState, runtime: Any) -> dict | None:
+def trim_messages(state: AgentState, runtime: Any) -> dict | None:
     """
-    Keep the context concise by retaining only the system message (0) and the 4 most recent messages in the conversation history.
+    Balanced memory trimming:
+    - Keeps System prompt
+    - Keeps ALL User messages
+    - Keeps ALL final Assistant JSON answers
+    - Keeps ONLY the MOST RECENT ToolMessage (latest search result)
+    - Removes all old ToolMessages to prevent memory bloat
     """
     messages = state["messages"]
     
-    if len(messages) <= 5:
+    if len(messages) <= 8:
         return None
-    
-    first_msg = messages[0]
-    recent_messages = messages[-4:]
-    new_messages = [first_msg] + recent_messages
+
+    important = []
+    last_tool_message = None
+
+    for msg in messages:
+        msg_type = getattr(msg, "type", None)
+        
+        if msg_type == "system":
+            important.append(msg)
+            continue
+            
+        if msg_type == "user":           # Keep every user question
+            important.append(msg)
+            continue
+            
+        if msg_type == "ai":
+            # Keep only final answers (no tool_calls)
+            if not getattr(msg, "tool_calls", None):
+                important.append(msg)
+            continue
+            
+        if msg_type == "tool":            # Keep ONLY the latest tool result
+            last_tool_message = msg       # Always update to the newest one
+
+    # Add the most recent tool result (if exists)
+    if last_tool_message:
+        important.append(last_tool_message)
+
+    # Limit: System + max 5 recent User/Assistant pairs + 1 latest tool
+    if len(important) > 13:
+        system = important[0]
+        recent = important[-12:]          # Keeps ~5 pairs + latest tool
+        important = [system] + recent
 
     return {
         "messages": [
             RemoveMessage(id=REMOVE_ALL_MESSAGES),
-            *new_messages
+            *important
         ]
     }
 
@@ -58,6 +90,13 @@ class DemoAgent:
             keep_alive="0s",
             format="json"
         )
+        # self.model = ChatGoogleGenerativeAI(
+        #     model="gemini-3.1-flash-lite-preview", # Hoặc "gemini-1.5-pro" tùy nhu cầu
+        #     api_key= settings.GOOGLE_API_KEY,
+        #     temperature=1.0,
+        #     # Bắt buộc Gemini trả về định dạng JSON giống như format="json" của Ollama
+        #     model_kwargs={"response_mime_type": "application/json"} 
+        # )
         
         self.memory = InMemorySaver()
         self.tools = [search_document_knowledge]
@@ -68,7 +107,6 @@ class DemoAgent:
             tools=self.tools,
             system_prompt=self.system_prompt,
             checkpointer=self.memory,
-            state_schema=CustomAgentState,
             middleware=[trim_messages]
         )
 
@@ -78,11 +116,10 @@ class DemoAgent:
 
         try:
             final_state = await self.agent.ainvoke(
-                {
+                {   
                     "messages": [{"role": "user", "content": query}],
-                    "important_metadata": {} 
-                },
-                config=config
+                }, # type: ignore
+                config=config # type: ignore
             )
 
             messages = final_state.get("messages", [])

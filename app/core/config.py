@@ -8,6 +8,7 @@ class Settings:
 
     LLM_MODEL = os.getenv("LLM_MODEL","qwen3.5:2b")
     BASE_URL = os.getenv("BASE_URL")
+    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
     QDRANT_URL = os.getenv("QDRANT_URL")
     QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
