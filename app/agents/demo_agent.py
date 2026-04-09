@@ -14,14 +14,12 @@ from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from app.services.rag_service import RAGService
 from app.core.config import settings
 from app.agents.prompt import SYSTEM_PROMPT
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 rag_service = RAGService()
 
-class CustomAgentState(AgentState):
-    important_metadata: Dict[str, Any]
-
 @before_model
-def trim_messages(state: CustomAgentState, runtime: Any) -> dict | None:
+def trim_messages(state: AgentState, runtime: Any) -> dict | None:
     """
     Keep the context concise by retaining only the system message (0) and the 4 most recent messages in the conversation history.
     """
@@ -58,6 +56,13 @@ class DemoAgent:
             keep_alive="0s",
             format="json"
         )
+        # self.model = ChatGoogleGenerativeAI(
+        #     model="gemini-3.1-flash-lite-preview", # Hoặc "gemini-1.5-pro" tùy nhu cầu
+        #     api_key= settings.GOOGLE_API_KEY,
+        #     temperature=1.0,
+        #     # Bắt buộc Gemini trả về định dạng JSON giống như format="json" của Ollama
+        #     model_kwargs={"response_mime_type": "application/json"} 
+        # )
         
         self.memory = InMemorySaver()
         self.tools = [search_document_knowledge]
@@ -68,7 +73,6 @@ class DemoAgent:
             tools=self.tools,
             system_prompt=self.system_prompt,
             checkpointer=self.memory,
-            state_schema=CustomAgentState,
             middleware=[trim_messages]
         )
 
@@ -78,11 +82,11 @@ class DemoAgent:
 
         try:
             final_state = await self.agent.ainvoke(
-                {
+                {   
                     "messages": [{"role": "user", "content": query}],
-                    "important_metadata": {} 
-                },
-                config=config
+                    # "important_metadata": {} 
+                }, # type: ignore
+                config=config # type: ignore
             )
 
             messages = final_state.get("messages", [])
