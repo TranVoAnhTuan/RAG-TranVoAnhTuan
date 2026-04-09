@@ -21,21 +21,55 @@ rag_service = RAGService()
 @before_model
 def trim_messages(state: AgentState, runtime: Any) -> dict | None:
     """
-    Keep the context concise by retaining only the system message (0) and the 4 most recent messages in the conversation history.
+    Balanced memory trimming:
+    - Keeps System prompt
+    - Keeps ALL User messages
+    - Keeps ALL final Assistant JSON answers
+    - Keeps ONLY the MOST RECENT ToolMessage (latest search result)
+    - Removes all old ToolMessages to prevent memory bloat
     """
     messages = state["messages"]
     
-    if len(messages) <= 5:
+    if len(messages) <= 8:
         return None
-    
-    first_msg = messages[0]
-    recent_messages = messages[-4:]
-    new_messages = [first_msg] + recent_messages
+
+    important = []
+    last_tool_message = None
+
+    for msg in messages:
+        msg_type = getattr(msg, "type", None)
+        
+        if msg_type == "system":
+            important.append(msg)
+            continue
+            
+        if msg_type == "user":           # Keep every user question
+            important.append(msg)
+            continue
+            
+        if msg_type == "ai":
+            # Keep only final answers (no tool_calls)
+            if not getattr(msg, "tool_calls", None):
+                important.append(msg)
+            continue
+            
+        if msg_type == "tool":            # Keep ONLY the latest tool result
+            last_tool_message = msg       # Always update to the newest one
+
+    # Add the most recent tool result (if exists)
+    if last_tool_message:
+        important.append(last_tool_message)
+
+    # Limit: System + max 5 recent User/Assistant pairs + 1 latest tool
+    if len(important) > 13:
+        system = important[0]
+        recent = important[-12:]          # Keeps ~5 pairs + latest tool
+        important = [system] + recent
 
     return {
         "messages": [
             RemoveMessage(id=REMOVE_ALL_MESSAGES),
-            *new_messages
+            *important
         ]
     }
 
@@ -84,7 +118,6 @@ class DemoAgent:
             final_state = await self.agent.ainvoke(
                 {   
                     "messages": [{"role": "user", "content": query}],
-                    # "important_metadata": {} 
                 }, # type: ignore
                 config=config # type: ignore
             )
