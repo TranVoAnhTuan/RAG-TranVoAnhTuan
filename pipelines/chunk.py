@@ -37,7 +37,7 @@ def chunk_node(state: IngestionState):
 
     final_data = []
     for doc in md_header_splits:
-        sub_chunks = split_by_token_with_paragraph(doc.page_content, tokenizer=tokenizer, max_tokens=512)
+        sub_chunks = split_by_token_with_paragraph(doc.page_content, tokenizer=tokenizer, max_tokens=settings.CONTEXT_LENGTH)
         for sub_content in sub_chunks:
             if not sub_content:
                 continue

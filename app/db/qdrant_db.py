@@ -1,5 +1,5 @@
 from qdrant_client import AsyncQdrantClient # Sử dụng bản async
-from qdrant_client.models import VectorParams, Distance, SparseVectorParams
+from qdrant_client.models import VectorParams, Distance, SparseVectorParams, HnswConfigDiff
 from app.core.config import settings
 
 class QdrantDatabase:
@@ -21,8 +21,22 @@ class QdrantDatabase:
                 },
                 sparse_vectors_config={
                     "sparse": SparseVectorParams()
-                }
+                },
+                hnsw_config=HnswConfigDiff(m=16, ef_construct=100),
+                shard_number=2
             )
+
+    async def enable_fast_upload_mode(self):
+        await self.client.update_collection(
+            collection_name=self.collection_name,
+            hnsw_config=HnswConfigDiff(m=0)
+        )
+
+    async def enable_fast_search_mode(self):
+        await self.client.update_collection(
+            collection_name=self.collection_name,
+            hnsw_config=HnswConfigDiff(m=32, ef_construct=100) 
+        )
 
     def get_client(self) -> AsyncQdrantClient:
         return self.client
