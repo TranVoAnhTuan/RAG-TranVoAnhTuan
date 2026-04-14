@@ -29,6 +29,14 @@ def trim_messages(state: AgentState, runtime: Any) -> dict | None:
     - Removes all old ToolMessages to prevent memory bloat
     """
     messages = state["messages"]
+    print("\n=== ALL MESSAGE TYPES ===")
+    for i, msg in enumerate(messages):
+        msg_type = getattr(msg, "type", None)
+        msg_class = type(msg).__name__
+        content_preview = str(msg)[:100] if hasattr(msg, '__str__') else ""
+        
+        print(f"{i}: type='{msg_type}' | class={msg_class}")
+        print(f"   Preview: {content_preview}\n")
     
     if len(messages) <= 8:
         return None
@@ -43,7 +51,7 @@ def trim_messages(state: AgentState, runtime: Any) -> dict | None:
             important.append(msg)
             continue
             
-        if msg_type == "user":           # Keep every user question
+        if msg_type == "human":           # Keep every user question
             important.append(msg)
             continue
             
@@ -85,7 +93,7 @@ class DemoAgent:
     def __init__(self):
         self.model = ChatOllama(
             model=settings.LLM_MODEL, 
-            temperature=0,
+            temperature=0.1,
             base_url=settings.BASE_URL,
             keep_alive="0s",
             format="json"
@@ -94,7 +102,6 @@ class DemoAgent:
         #     model="gemini-3.1-flash-lite-preview", # Hoặc "gemini-1.5-pro" tùy nhu cầu
         #     api_key= settings.GOOGLE_API_KEY,
         #     temperature=1.0,
-        #     # Bắt buộc Gemini trả về định dạng JSON giống như format="json" của Ollama
         #     model_kwargs={"response_mime_type": "application/json"} 
         # )
         
@@ -131,6 +138,13 @@ class DemoAgent:
           
             if hasattr(final_message, "content") and final_message.content:
                 final_answer = final_message.content
+
+
+            print("\n" + "="*60)
+            print("🔍 FINAL MESSAGE TYPE:", type(final_message).__name__)
+            print("🔍 FINAL MESSAGE CONTENT (RAW):")
+            print(final_answer)
+            print("="*60 + "\n")
 
             if isinstance(final_answer, str):
                 match = re.search(r'\{.*\}', final_answer, re.DOTALL)

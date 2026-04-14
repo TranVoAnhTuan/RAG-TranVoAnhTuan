@@ -22,15 +22,14 @@ class RAGService:
             with model_manager.use_dense_model_on_gpu() as gpu_dense_model:
                 dense = gpu_dense_model.encode(query_text).tolist() 
             
-            # Sparse runs on CPU
             sparse = list(self.sparse_model.embed([query_text]))[0]
             return dense, sparse
 
         dense_query, sparse_query = await loop.run_in_executor(None, get_embeddings)
 
         sparse_query_vector = models.SparseVector(
-            indices=sparse_query.indices.tolist(),
-            values=sparse_query.values.tolist()
+            indices=list(sparse_query.indices) if sparse_query.indices is not None else [],
+            values=list(sparse_query.values) if sparse_query.values is not None else []
         )
 
         # 2. Hybrid Search (This process calls DB API, VRAM is 100% free at this time)
@@ -83,7 +82,7 @@ class RAGService:
             with model_manager.use_reranker_model() as gpu_reranker:
                 scores= gpu_reranker.rerank(query_text, documents)
             
-                del gpu_reranker 
+                # del gpu_reranker 
             return scores
 
         jina_results = await loop.run_in_executor(None, do_rerank)
@@ -106,4 +105,5 @@ class RAGService:
 CONTENT: {content}
 METADATA: {{"Header_1": "{h1}", "Header_2": "{h2}", "file_url": "{f_url}"}}
 """
+        print(search_result)
         return search_result
