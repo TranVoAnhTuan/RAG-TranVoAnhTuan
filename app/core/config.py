@@ -12,7 +12,7 @@ class Settings:
 
     QDRANT_URL = os.getenv("QDRANT_URL")
     QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
-    QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME")
+    QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME", "intern_rag_agent")
     SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "rag_database.db")
     MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
     MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "rag-agent")
@@ -22,7 +22,10 @@ class Settings:
     
     HUGGINGFACE_ACCESS_TOKEN = os.getenv("HUGGINGFACE_ACCESS_TOKEN")
 
-    SPARSE_MODEL_NAME = os.getenv("SPARSE_MODEL_NAME")
-    DENSE_MODEL_NAME = os.getenv("DENSE_MODEL_NAME")
+    SPARSE_MODEL_NAME = os.getenv("SPARSE_MODEL_NAME", "Qdrant/bm42-all-minilm-l6-v2-attentions")
+    DENSE_MODEL_NAME = os.getenv("DENSE_MODEL_NAME", "Qwen/Qwen3-Embedding-0.6B")
+    CONTEXT_LENGTH = int(os.getenv("CONTEXT_LENGTH", 8000))
+
+    RERANKER_MODEL_NAME = os.getenv("RERANKER_MODEL_NAME", "jinaai/jina-reranker-v3")
 
 settings = Settings()

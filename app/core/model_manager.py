@@ -1,6 +1,7 @@
 import torch
 from sentence_transformers import SentenceTransformer
 from fastembed import SparseTextEmbedding
+from FlagEmbedding import BGEM3FlagModel
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModel
 from app.core.config import settings
 from transformers import BitsAndBytesConfig
@@ -27,7 +28,8 @@ class ModelManager:
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
+            torch.cuda.synchronize()
+            torch.cuda.memory._record_memory_history(enabled=None)
 
     def get_dense_model(self):
         if self._dense_model is None:
@@ -47,6 +49,7 @@ class ModelManager:
             self.get_dense_model() 
         
         self._dense_model.to("cuda")
+        torch.cuda.empty_cache()
         self.print_vram("2. USING DENSE (PEAK VRAM)")
         
         try:
@@ -54,6 +57,7 @@ class ModelManager:
         finally:
             print("🧹 [GPU] Unloading Dense Model from VRAM...")
             self._dense_model.to("cpu") 
+            torch.cuda.synchronize()
             self._clear_vram()
             self.print_vram("3. AFTER CLEANING DENSE")
             print("="*50 + "\n")
@@ -73,22 +77,24 @@ class ModelManager:
     def get_reranker_model(self):
         if self._reranker_model is None:
             print("🚀 Loading Jina Reranker v3 into VRAM...")
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True, 
-                bnb_4bit_compute_dtype=torch.float16, 
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4"
-            )
+            # device = "cuda" if torch.cuda.is_available() else "cpu"
+            # quantization_config = BitsAndBytesConfig(
+            #     load_in_4bit=True, 
+            #     bnb_4bit_compute_dtype=torch.float16, 
+            #     bnb_4bit_use_double_quant=True,
+            #     bnb_4bit_quant_type="nf4"
+            # )
             
-            torch_dtype = torch.float16 if device == "cuda" else torch.float32
+            # torch_dtype = torch.float16 if device == "cuda" else torch.float32
             
             self._reranker_model = AutoModel.from_pretrained(
-                'jinaai/jina-reranker-v3',
-                torch_dtype=torch_dtype,
+                settings.RERANKER_MODEL_NAME,
+                torch_dtype=torch.float16,
                 trust_remote_code=True,
-                quantization_config=quantization_config,
-            ).to(device).eval()
+                # quantization_config=quantization_config,
+                device_map=None,
+                low_cpu_mem_usage=True,
+            ).to("cpu").eval()
             
         return self._reranker_model
     
@@ -98,15 +104,20 @@ class ModelManager:
         print("\n" + "="*50)
         self.print_vram("1. BEFORE LOADING RERANKER")
         print("⏳ [GPU] Loading Jina Reranker into VRAM...")
-        model = self.get_reranker_model()
+        if self._reranker_model is None:
+            self.get_reranker_model()
+        self._reranker_model.to("cuda")
+        torch.cuda.empty_cache()
         self.print_vram("2. USING RERANKER (PEAK VRAM)")
         try:
-            yield model
+            yield self._reranker_model
         finally:
             print("🧹 [GPU] Removing Jina Reranker from VRAM...")
-            self._reranker_model = None 
-            del model
+            self._reranker_model.to("cpu")
+            
+            torch.cuda.synchronize()      
             self._clear_vram()
+
             self.print_vram("3. AFTER CLEANING RERANKER")
             print("="*50 + "\n")
     

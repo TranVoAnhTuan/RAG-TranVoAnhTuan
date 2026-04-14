@@ -20,8 +20,8 @@ def initialize_session_state():
         st.session_state.processing_status = "not_started"
     if "uploaded_files_info" not in st.session_state:
         st.session_state.uploaded_files_info = []
-    if "extracted_tables" not in st.session_state:
-        st.session_state.extracted_tables = []
+    # if "extracted_tables" not in st.session_state:
+    #     st.session_state.extracted_tables = []
 
 def render_sidebar():
     with st.sidebar:
@@ -186,13 +186,15 @@ def main():
     initialize_session_state()
     render_sidebar()
 
-    tab1, tab2 = st.tabs(["Chat", "Document Structure"])
+    # tab1, tab2 = st.tabs(["Chat", "Document Structure"])
 
-    with tab1:
-        render_chat()
+    # with tab1:
+    #     render_chat()
 
-    with tab2:
-        render_structure_viz()
+    # with tab2:
+    #     render_structure_viz()
+    st.title("Document Intelligence Assistant")
+    render_chat()
 
 if __name__ == "__main__":
     main()
