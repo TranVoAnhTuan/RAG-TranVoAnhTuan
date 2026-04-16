@@ -15,6 +15,10 @@ from app.services.rag_service import RAGService
 from app.core.config import settings
 from app.agents.prompt import SYSTEM_PROMPT
 from langchain_google_genai import ChatGoogleGenerativeAI
+from typing import Optional
+from pymongo import MongoClient
+from langgraph.checkpoint.mongodb import MongoDBSaver
+from app.db.mongo_db import mongo_db
 
 rag_service = RAGService()
 
@@ -82,9 +86,11 @@ def trim_messages(state: AgentState, runtime: Any) -> dict | None:
     }
 
 @tool
-async def search_document_knowledge(query: str) -> str:
+async def search_document_knowledge(query: str, topic: Optional[str] = None) -> str:
     """
     Search for information in the document knowledge base.
+    You MUST provide the `topic` parameter if you are confident the user's query belongs to a specific topic.
+    If the topic is unknown or unclear, do not provide this parameter.
     IMPORTANT GUIDELINE: If called a 2nd or 3rd time, the query must represent a completely different approach or a broader topic.
     """
     return await rag_service.retrieve_and_rerank(query)
@@ -107,7 +113,7 @@ class DemoAgent:
         #     # model_kwargs={"response_mime_type": "application/json"} 
         # )
         
-        self.memory = InMemorySaver()
+        self.memory = MongoDBSaver(mongo_db.client)
         self.tools = [search_document_knowledge]
         self.system_prompt = SYSTEM_PROMPT
 

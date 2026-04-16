@@ -10,4 +10,5 @@ class IngestionState(TypedDict):
     status: str
     file_hash: Optional[str]
     is_duplicate: Optional[bool]
-    minio_url: Optional[str]  # Mới thêm
+    minio_url: Optional[str]
+    topic: Optional[str]
