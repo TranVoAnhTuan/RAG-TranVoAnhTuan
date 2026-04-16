@@ -93,19 +93,22 @@ class DemoAgent:
     def __init__(self):
         self.model = ChatOllama(
             model=settings.LLM_MODEL, 
-            temperature=0.1,
+            temperature=0,
             base_url=settings.BASE_URL,
             keep_alive="0s",
+            # reasoning= True,
+            # disable_streaming=False,
             format="json"
         )
         # self.model = ChatGoogleGenerativeAI(
-        #     model="gemini-3.1-flash-lite-preview", # Hoặc "gemini-1.5-pro" tùy nhu cầu
+        #     model="gemini-3-flash-preview", # Hoặc "gemini-1.5-pro" tùy nhu cầu
         #     api_key= settings.GOOGLE_API_KEY,
-        #     temperature=1.0,
-        #     model_kwargs={"response_mime_type": "application/json"} 
+        #     temperature=0.4,
+        #     # model_kwargs={"response_mime_type": "application/json"} 
         # )
         
         self.memory = InMemorySaver()
+        # self.memory = None
         self.tools = [search_document_knowledge]
         self.system_prompt = SYSTEM_PROMPT
 
@@ -124,7 +127,7 @@ class DemoAgent:
         try:
             final_state = await self.agent.ainvoke(
                 {   
-                    "messages": [{"role": "user", "content": query}],
+                    "messages": [{"role": "human", "content": query}],
                 }, # type: ignore
                 config=config # type: ignore
             )
@@ -134,11 +137,47 @@ class DemoAgent:
                 return {"response": "No answer found.", "citations": []}
             
             final_message = messages[-1]
+            # ==================== DEBUG THÊM VÀO ĐÂY ====================
+            print("\n" + "="*80)
+            print("🔍 DEBUG REASONING - FINAL MESSAGE")
+            print(f"Type: {type(final_message).__name__}")
+            
+            # 1. In toàn bộ object để xem cấu trúc
+            print("\n--- Full final_message ---")
+            print(final_message)
+            
+            # 2. In content (phần chính bạn đang lấy)
+            print("\n--- .content ---")
+            print(repr(final_message.content))   # dùng repr() để thấy ký tự ẩn và <think>
+            
+            # 3. In additional_kwargs (nơi chứa reasoning_content)
+            print("\n--- .additional_kwargs ---")
+            print(final_message.additional_kwargs)
+            
+            # 4. Kiểm tra riêng reasoning_content
+            reasoning = final_message.additional_kwargs.get("reasoning_content")
+            if reasoning:
+                print("\n--- REASONING_CONTENT (độ dài:", len(reasoning), ") ---")
+                print(repr(reasoning[:1500] + "..." if len(reasoning) > 1500 else reasoning))
+            else:
+                print("\n--- Không có reasoning_content ---")
+            
+            # 5. In response_metadata (có thể có model, finish_reason...)
+            print("\n--- .response_metadata ---")
+            print(final_message.response_metadata)
+            print("="*80 + "\n")
+            # ============================================================
             final_answer = ""
           
             if hasattr(final_message, "content") and final_message.content:
-                final_answer = final_message.content
-
+                content = final_message.content
+                if isinstance(content, list):
+                    # Extract and join 'text' values from the list of dictionaries
+                    final_answer = "".join([
+                        block.get("text", "") for block in content if isinstance(block, dict)
+                    ])
+                else:
+                    final_answer = content
 
             print("\n" + "="*60)
             print("🔍 FINAL MESSAGE TYPE:", type(final_message).__name__)
