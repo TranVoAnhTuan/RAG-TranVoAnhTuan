@@ -10,3 +10,4 @@ minio/
 *.txt
 docker-compose.yml
 testset*.json
+test*.py
