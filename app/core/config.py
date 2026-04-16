@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+import json
 
 load_dotenv()
 
@@ -27,5 +28,21 @@ class Settings:
     CONTEXT_LENGTH = int(os.getenv("CONTEXT_LENGTH", 8000))
 
     RERANKER_MODEL_NAME = os.getenv("RERANKER_MODEL_NAME", "jinaai/jina-reranker-v3")
+
+    _default_topics = {
+        "Insurance": "Includes regulations, policies, company information, and guidelines related to the insurance industry.",
+        "QNU": "Information related to Quy Nhon University (QNU), including university regulations, academics, admissions, and campus rules.",
+        "General": "General topics or documents that do not strictly fit into Insurance or QNU categories."
+    }
+
+    _topics_env = os.getenv("AVAILABLE_TOPICS_JSON")
+    if _topics_env:
+        try:
+            AVAILABLE_TOPICS = json.loads(_topics_env)
+        except json.JSONDecodeError:
+            print("⚠️ Lỗi parse AVAILABLE_TOPICS_JSON trong .env, sử dụng topics mặc định.")
+            AVAILABLE_TOPICS = _default_topics
+    else:
+        AVAILABLE_TOPICS = _default_topics
 
 settings = Settings()

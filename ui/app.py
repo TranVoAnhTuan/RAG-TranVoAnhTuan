@@ -1,39 +1,29 @@
 import streamlit as st
 import requests
-import os
 import uuid 
 from streamlit_extras.bottom_container import bottom
 
 API_URL = "http://127.0.0.1:8000/api/v1"
-st.set_page_config(
-    page_title="Document Intelligence Assistant", 
-    layout="wide"
-)
+st.set_page_config(page_title="Document Intelligence Assistant", layout="wide")
 
 def initialize_session_state():
     if "thread_id" not in st.session_state:
         st.session_state.thread_id = str(uuid.uuid4())
-        
     if "messages" not in st.session_state:
         st.session_state.messages = []
     if "processing_status" not in st.session_state:
         st.session_state.processing_status = "not_started"
     if "uploaded_files_info" not in st.session_state:
         st.session_state.uploaded_files_info = []
-    # if "extracted_tables" not in st.session_state:
-    #     st.session_state.extracted_tables = []
 
 def render_sidebar():
     with st.sidebar:
         st.title("Setup")
 
-        uploaded_file = st.file_uploader(
-            "Upload Documents",
-            type=["pdf"],
-        )
+        uploaded_file = st.file_uploader("Upload Documents", type=["pdf"])
 
         if uploaded_file:
-            st.info(f"1 file uploaded")
+            st.info("1 file selected")
 
             if st.button("Process & Index", use_container_width=True):
                 with st.spinner("Processing document..."):
@@ -46,8 +36,6 @@ def render_sidebar():
 
                             if uploaded_file.name not in st.session_state.uploaded_files_info:
                                 st.session_state.uploaded_files_info.append(uploaded_file.name)
-
-                            st.session_state.extracted_tables = data.get("tables", []) 
 
                             st.success("Documents indexed! You can now chat.")
                         else:
@@ -62,6 +50,8 @@ def render_sidebar():
         if st.button("New Chat", use_container_width=True):
             st.session_state.messages = []
             st.session_state.thread_id = str(uuid.uuid4())
+            if "pending_topics" in st.session_state:
+                st.session_state.pending_topics = []
             st.rerun()
 
         st.caption(f"Current Thread ID: {st.session_state.thread_id}")
@@ -90,36 +80,51 @@ def render_chat():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
             
+            if message.get("needs_topic_clarification"):
+                st.caption(f"Topic clarification requested for: {', '.join(message['needs_topic_clarification'])}")
+            
             if message.get("citations"):
-                with st.expander("📝 Citations"):
+                with st.expander("📚 Citations"):
                     for i, cite in enumerate(message["citations"], 1):
                         h1 = cite.get('Header_1', 'Unknown Header')
                         h2 = cite.get('Header_2', '')
                         file_url = cite.get('file_url', '')
                         
-                        header_text = f"**{i}. {h1}**"
-                        if h2: 
-                            header_text += f" - *{h2}*"
-                            
+                        header_text = f"**{i}. {h1}**" + (f" - *{h2}*" if h2 else "")
                         st.markdown(header_text)
                         if file_url:
                             st.markdown(f"> 🔗 [View PDF]({file_url})")
 
+    prompt = None
+    
+    if st.session_state.get("pending_topics"):
+        st.info("👇 Please select a topic to narrow down the search:")
+        cols = st.columns(len(st.session_state.pending_topics))
+        for idx, topic in enumerate(st.session_state.pending_topics):
+            if cols[idx].button(topic, key=f"btn_{topic}"):
+                # English hidden prompt for the agent
+                prompt = f"I am asking specifically about the '{topic}' topic. Please answer my previous question based on this."
+                st.session_state.pending_topics = []
+                st.rerun()
+                
     with bottom():
-        prompt = st.chat_input("Ask a question about your documents or anything else...")
+        user_input = st.chat_input("Ask a question about your documents or anything else...")
+        if user_input:
+            prompt = user_input
+            if "pending_topics" in st.session_state:
+                st.session_state.pending_topics = []
 
     if prompt:
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        # Hide the system-generated follow-up prompt from the UI for a cleaner experience
+        if not prompt.startswith("I am asking specifically about"):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
 
         with st.chat_message("assistant"):
             with st.spinner("Searching and synthesizing answer..."):
                 try:
-                    payload = {
-                        "query": prompt,
-                        "thread_id": st.session_state.thread_id
-                    }
+                    payload = {"query": prompt, "thread_id": st.session_state.thread_id}
                     res = requests.post(f"{API_URL}/chat", json=payload)
                     
                     if res.status_code == 200:
@@ -128,19 +133,22 @@ def render_chat():
                         if isinstance(raw_answer, dict):
                             main_response = raw_answer.get("response", "No answer available.")
                             citations = raw_answer.get("citations", [])
+                            clarification_topics = raw_answer.get("needs_topic_clarification", [])
                             
                             st.markdown(main_response)
+                            
+                            if clarification_topics:
+                                st.session_state.pending_topics = clarification_topics
+                                st.rerun()
+                                
                             if citations:
-                                with st.expander("📝 Citations"):
+                                with st.expander("📚 Citations"):
                                     for i, cite in enumerate(citations, 1):
                                         h1 = cite.get('Header_1', 'Unknown Header')
                                         h2 = cite.get('Header_2', '')
                                         file_url = cite.get('file_url', '')
                                         
-                                        header_text = f"**{i}. {h1}**"
-                                        if h2: 
-                                            header_text += f" - *{h2}*"
-                                            
+                                        header_text = f"**{i}. {h1}**" + (f" - *{h2}*" if h2 else "")
                                         st.markdown(header_text)
                                         if file_url:
                                             st.markdown(f"> 🔗 [View PDF]({file_url})")
@@ -148,7 +156,8 @@ def render_chat():
                             st.session_state.messages.append({
                                 "role": "assistant", 
                                 "content": main_response,
-                                "citations": citations
+                                "citations": citations,
+                                "needs_topic_clarification": clarification_topics
                             })
                         else:
                             st.markdown(str(raw_answer))
@@ -158,41 +167,13 @@ def render_chat():
                             })
                             
                     else:
-                        st.error("Agent error")
+                        st.error("Agent error occurred.")
                 except requests.exceptions.ConnectionError:
-                    st.error("Cannot connect to server")
-
-def render_structure_viz():
-    st.title("Document Structure")
-    
-    if st.session_state.processing_status != "completed":
-        st.info("Please process documents first")
-        return
-        
-    tables = st.session_state.extracted_tables
-    
-    if not tables:
-        st.info("No tables found in document")
-        return
-        
-    st.success(f"Extracted {len(tables)} tables")
-    
-    for tbl in tables:
-        st.subheader(f"Table {tbl['table_number']}")
-        st.dataframe(tbl['data'], use_container_width=True)
-        st.divider()
+                    st.error("Cannot connect to server.")
 
 def main():
     initialize_session_state()
     render_sidebar()
-
-    # tab1, tab2 = st.tabs(["Chat", "Document Structure"])
-
-    # with tab1:
-    #     render_chat()
-
-    # with tab2:
-    #     render_structure_viz()
     st.title("Document Intelligence Assistant")
     render_chat()
 

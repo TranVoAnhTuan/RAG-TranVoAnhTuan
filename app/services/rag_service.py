@@ -3,6 +3,7 @@ from app.db.qdrant_db import QdrantDatabase
 from app.core.config import settings
 import asyncio
 from app.core.model_manager import model_manager
+from typing import Optional
 
 class RAGService:
     def __init__(self):
@@ -13,7 +14,7 @@ class RAGService:
         # DO NOT initialize Dense Model and Reranker here to avoid occupying VRAM permanently.
         self.sparse_model = model_manager.get_sparse_model()
 
-    async def retrieve_and_rerank(self, query_text: str) -> str:
+    async def retrieve_and_rerank(self, query_text: str, filter_topic: Optional[str] = None) -> str:
         
         # 1. Embed query
         loop = asyncio.get_event_loop()
@@ -31,6 +32,16 @@ class RAGService:
             indices=list(sparse_query.indices) if sparse_query.indices is not None else [],
             values=list(sparse_query.values) if sparse_query.values is not None else []
         )
+        query_filter = None
+        if filter_topic:
+            query_filter = models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="topic", 
+                        match=models.MatchValue(value=filter_topic)
+                    )
+                ]
+            )
 
         # 2. Hybrid Search (This process calls DB API, VRAM is 100% free at this time)
         hybrid_results = await self.client.query_points(
@@ -40,11 +51,13 @@ class RAGService:
                     query=dense_query,
                     using="dense",
                     limit=20,
+                    filter=query_filter
                 ),
                 models.Prefetch(
                     query=sparse_query_vector,
                     using="sparse",
                     limit=20,
+                    filter=query_filter
                 ),
             ],
             query=models.FusionQuery(fusion=models.Fusion.RRF),
