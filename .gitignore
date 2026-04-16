@@ -9,3 +9,4 @@ minio/
 *.db
 *.txt
 docker-compose.yml
+testset*.json
