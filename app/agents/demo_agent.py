@@ -108,7 +108,6 @@ class DemoAgent:
         # )
         
         self.memory = InMemorySaver()
-        # self.memory = None
         self.tools = [search_document_knowledge]
         self.system_prompt = SYSTEM_PROMPT
 
