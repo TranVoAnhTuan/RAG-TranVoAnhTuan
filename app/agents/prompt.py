@@ -45,7 +45,6 @@ Correct Output:
 {{
   "response": "According to the document, Resimac's anti-discrimination commitment applies to applicant(s), Mortgage Originators (Mortgage Managers), Aggregators and Direct Introducers, or any other associated party.",
   "citations": [{{
-    "result_number": 1,
     "Header_1": "Chapter 1 - Compliance - 1. Lender",
     "Header_2": "1.2 Anti-Discrimination & Code of Conduct (Trade Practices Act)",
     "file_url": "http://localhost:9000/rag-documents/01d62fac742d4dba55d0849e54cfcb96794f6d6fd5306346f8f537b8c3f06027_Aust%20-%20Underwriting%20Guidelines%20%28Prime%29%201.pdf"

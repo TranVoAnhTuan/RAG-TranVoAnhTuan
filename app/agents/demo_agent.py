@@ -114,6 +114,7 @@ class DemoAgent:
         # )
         
         self.memory = MongoDBSaver(mongo_db.client)
+        # self.memory = InMemorySaver()
         self.tools = [search_document_knowledge]
         self.system_prompt = SYSTEM_PROMPT
 
