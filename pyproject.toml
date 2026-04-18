@@ -1,0 +1,92 @@
+[tool.poetry]
+name = "testing"
+version = "0.1.0"
+description = "Testing environment"
+
+[tool.poetry.dependencies]
+python = "~3.11"
+paddleocr = "^2.7.0"
+torch = "*"
+transformers = "^4.44.2"
+ipykernel = "^7.2.0"
+pymupdf = "^1.26.7"
+scikit-learn = "^1.8.0"
+easyocr = "^1.7.2"
+pypdf2 = "^3.0.1"
+pdfplumber = "^0.11.9"
+pymongo = ">=4.12,<4.16"
+qdrant-client = "^1.17.0"
+flagembedding = "^1.3.5"
+llmlingua = "^0.2.2"
+pymupdf4llm = "^0.3.4"
+fastembed = "^0.7.4"
+fastembed-gpu = "^0.7.4"
+pydantic-settings = "^2.13.1"
+pymysql = "^1.1.2"
+python-multipart = "^0.0.22"
+uvicorn = "^0.41.0"
+numpy = "^2.4.3"
+langchain = {extras = ["huggingface"], version = "^1.2.12"}
+langchain-openai = "^1.1.11"
+streamlit = "^1.55.0"
+pandas = "^2.2"
+langchain-classic = "^1.0.2"
+langchain-groq = "^1.1.2"
+huggingface-hub = "^0.34.0"
+langchain-huggingface = "^1.2.1"
+httpx = "^0.28.1"
+langsmith = "^0.7.22"
+langchain-ollama = "^1.0.1"
+docling = "^2.81.0"
+streamlit-extras = "^0.7.8"
+bitsandbytes = "^0.49.2"
+accelerate = "^1.13.0"
+minio = "^7.2.20"
+langmem = "^0.0.30"
+langgraph-checkpoint-mongodb = "^0.3.1"
+motor = "^3.7.1"
+langgraph = "^1.1.4"
+langchain-google-genai = "^4.2.1"
+fastmcp = "^3.2.4"
+mcp = "^1.27.0"
+fastapi = "^0.136.0"
+langchain-mcp-adapters = "^0.2.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+# ── MCP Server dependency group ───────────────────────────────────────────────
+# Installed in the mcp-server Docker container with:
+#   poetry install --only mcp --no-root
+# This is a strict subset of the main group — no separate requirements.txt needed.
+[tool.poetry.group.mcp]
+optional = true
+
+[tool.poetry.group.mcp.dependencies]
+# FastMCP & MCP protocol
+fastmcp = "^3.2.4"
+mcp = "^1.27.0"
+# Web server
+uvicorn = "^0.41.0"
+# Qdrant (async client)
+qdrant-client = "^1.17.0"
+# Embedding & Reranking
+fastembed = "^0.7.4"
+flagembedding = "^1.3.5"
+transformers = "^4.44.2"
+torch = "*"
+# Utilities
+python-dotenv = "*"
+huggingface-hub = "^0.34.0"
+
+# ── UI / Streamlit dependency group ──────────────────────────────────────────
+# Installed in the frontend Docker container with:
+#   poetry install --only ui --no-root
+[tool.poetry.group.ui]
+optional = true
+
+[tool.poetry.group.ui.dependencies]
+streamlit = "^1.55.0"
+streamlit-extras = "^0.7.8"
+requests = "*"

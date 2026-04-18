@@ -1,11 +1,11 @@
 import os
 import shutil
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from pydantic import BaseModel
 from pipelines.langgraph_ingestion import ingestion_app 
 from app.agents.demo_agent import DemoAgent
 import traceback
-
+from app.db.sqlite_db import sqlite_db
 
 router = APIRouter()
 agent = DemoAgent()
@@ -13,9 +13,14 @@ agent = DemoAgent()
 class QueryRequest(BaseModel):
     query: str
     thread_id: str = "default_thread"
+    topic: str = "General"
+
+@router.get("/topics")
+async def get_topics():
+    return {"topics": sqlite_db.get_all_topics()}
 
 @router.post("/upload")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(file: UploadFile = File(...), topic: str = Form("General")):
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     
@@ -29,7 +34,8 @@ async def upload_pdf(file: UploadFile = File(...)):
     try:
         initial_state = {
             "file_path": temp_file_path,
-            "filename": file.filename
+            "filename": file.filename,
+            "topic": topic
         }
         
         # Run the ingestion pipeline
@@ -55,7 +61,11 @@ async def upload_pdf(file: UploadFile = File(...)):
 @router.post("/chat")
 async def chat_with_agent(request: QueryRequest):
     try:
-        answer = await agent.ask(request.query, thread_id= request.thread_id)
+        answer = await agent.ask(
+            request.query, 
+            thread_id=request.thread_id, 
+            topic=request.topic
+        )
         return {"answer": answer}
     except Exception as e:
         traceback.print_exc()
