@@ -33,6 +33,8 @@ def check_duplicate_node(state: IngestionState):
             "minio_url": existing_doc[0]
         }
     
+    topic = state.get("topic", "General")
+    
     print("🆕 New document detected. Saving to MinIO...")
     object_name = f"{file_hash}_{filename}"
     minio_url = minio_client.upload_file(file_path, object_name)
@@ -40,8 +42,8 @@ def check_duplicate_node(state: IngestionState):
     with sqlite_db.get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO documents_metadata (file_hash, filename, minio_url) VALUES (?, ?, ?)",
-            (file_hash, filename, minio_url)
+            "INSERT INTO documents_metadata (file_hash, filename, minio_url, topic) VALUES (?, ?, ?, ?)",
+            (file_hash, filename, minio_url, topic)
         )
         conn.commit()
 

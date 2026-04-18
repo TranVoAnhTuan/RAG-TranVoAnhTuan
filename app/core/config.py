@@ -23,6 +23,10 @@ class Settings:
     
     HUGGINGFACE_ACCESS_TOKEN = os.getenv("HUGGINGFACE_ACCESS_TOKEN")
 
+    # MCP Server URL — used by DemoAgent (MCP client) to connect to the tools service.
+    # In Docker: http://mcp-server:8001/mcp  |  Local dev: http://localhost:8001/mcp
+    MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8001/mcp")
+
     SPARSE_MODEL_NAME = os.getenv("SPARSE_MODEL_NAME", "Qdrant/bm42-all-minilm-l6-v2-attentions")
     DENSE_MODEL_NAME = os.getenv("DENSE_MODEL_NAME", "Qwen/Qwen3-Embedding-0.6B")
     CONTEXT_LENGTH = int(os.getenv("CONTEXT_LENGTH", 8000))

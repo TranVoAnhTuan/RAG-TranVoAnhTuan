@@ -1,43 +1,41 @@
 import gc
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from app.api.routes import router
+from app.api.routes import router, agent
+
 
 @asynccontextmanager
-async def lifespan(app: FastAPI): 
-    print("🚀 Start the FastAPI server...")
-    yield 
+async def lifespan(app: FastAPI):
+    # ── Startup ────────────────────────────────────────────────────────────────
+    print("🚀 Starting FastAPI server…")
 
-    print("\n🛑 Received command to stop server (Ctrl+C). Resource cleanup in progress...")
+    # Open the MCP connection and build the agent graph.
+    # This fetches tools + system prompt from the FastMCP server.
+    await agent.connect_mcp()
 
-    # Remove FastEmbed models in RAGService
-    try:
-        from app.api.routes import agent
-        from app.agents.demo_agent import rag_service
-        
-        del rag_service.sparse_model
-        
-        # Delete the entire instance
-        del rag_service
-        del agent
-        print("✅ Freed Embedding and Reranker models.")
-    except Exception as e:
-        pass
+    yield
 
-    # Force Python to clean memory immediately
+    # ── Shutdown ───────────────────────────────────────────────────────────────
+    print("\n🛑 Received shutdown signal. Cleaning up…")
+
+    # Gracefully close the MCP client connection
+    await agent.disconnect_mcp()
+
+    # Force Python GC to reclaim any remaining memory
     gc.collect()
-    print("🧹 RAM has been completely freed. Goodbye!\n")
+    print("🧹 Cleanup complete. Goodbye!\n")
 
-# Initialize FastAPI with lifespan
+
+# ── FastAPI application ────────────────────────────────────────────────────────
 app = FastAPI(
-    title="Agentic RAG PDF API", 
+    title="Agentic RAG PDF API",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 app.include_router(router, prefix="/api/v1")
 
+
 if __name__ == "__main__":
     import uvicorn
-    # Note: When using reload=True, uvicorn might spawn multiple workers.
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

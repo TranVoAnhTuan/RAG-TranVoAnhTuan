@@ -1,26 +1,42 @@
+"""
+DemoAgent — Agentic RAG orchestrator (MCP Client).
+
+This module is now a *thin* MCP client. All tool execution logic and the
+system prompt live in the separate FastMCP server (mcp_server/).
+
+Lifecycle
+─────────
+  DemoAgent is created at import time but the agent graph is NOT built until
+  `await agent_instance.connect_mcp()` is called (done in FastAPI lifespan).
+  `await agent_instance.disconnect_mcp()` must be called on shutdown.
+
+Communication with MCP server
+──────────────────────────────
+  Transport : Streamable HTTP  →  http://<MCP_SERVER_URL>/mcp
+  Library   : langchain-mcp-adapters (MultiServerMCPClient)
+  At startup the client:
+    1. Lists tools from the MCP server  →  used by create_agent()
+    2. Fetches rag_system_prompt        →  used as the agent's system_prompt
+"""
+
 import json
 import re
-import os
-from typing import Any, Dict
+import gc
+from typing import Any
 
 from langchain_ollama import ChatOllama
-from langchain.tools import tool
 from langchain.agents import create_agent, AgentState
 from langchain.agents.middleware import before_model
 from langchain.messages import RemoveMessage
-from langgraph.checkpoint.memory import InMemorySaver
+from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
-
-from app.services.rag_service import RAGService
-from app.core.config import settings
-from app.agents.prompt import SYSTEM_PROMPT
-from langchain_google_genai import ChatGoogleGenerativeAI
-from typing import Optional
-from pymongo import MongoClient
 from langgraph.checkpoint.mongodb import MongoDBSaver
+
+from app.core.config import settings
 from app.db.mongo_db import mongo_db
 
-rag_service = RAGService()
+
+# ── Memory trimming middleware ─────────────────────────────────────────────────
 
 @before_model
 def trim_messages(state: AgentState, runtime: Any) -> dict | None:
@@ -37,11 +53,10 @@ def trim_messages(state: AgentState, runtime: Any) -> dict | None:
     for i, msg in enumerate(messages):
         msg_type = getattr(msg, "type", None)
         msg_class = type(msg).__name__
-        content_preview = str(msg)[:100] if hasattr(msg, '__str__') else ""
-        
+        content_preview = str(msg)[:100] if hasattr(msg, "__str__") else ""
         print(f"{i}: type='{msg_type}' | class={msg_class}")
         print(f"   Preview: {content_preview}\n")
-    
+
     if len(messages) <= 8:
         return None
 
@@ -50,156 +65,208 @@ def trim_messages(state: AgentState, runtime: Any) -> dict | None:
 
     for msg in messages:
         msg_type = getattr(msg, "type", None)
-        
+
         if msg_type == "system":
             important.append(msg)
             continue
-            
+
         if msg_type == "human":           # Keep every user question
             important.append(msg)
             continue
-            
+
         if msg_type == "ai":
             # Keep only final answers (no tool_calls)
             if not getattr(msg, "tool_calls", None):
                 important.append(msg)
             continue
-            
-        if msg_type == "tool":            # Keep ONLY the latest tool result
-            last_tool_message = msg       # Always update to the newest one
 
-    # Add the most recent tool result (if exists)
+        if msg_type == "tool":            # Keep ONLY the latest tool result
+            last_tool_message = msg
+
     if last_tool_message:
         important.append(last_tool_message)
 
     # Limit: System + max 5 recent User/Assistant pairs + 1 latest tool
     if len(important) > 13:
         system = important[0]
-        recent = important[-12:]          # Keeps ~5 pairs + latest tool
+        recent = important[-12:]
         important = [system] + recent
 
     return {
         "messages": [
             RemoveMessage(id=REMOVE_ALL_MESSAGES),
-            *important
+            *important,
         ]
     }
 
-@tool
-async def search_document_knowledge(query: str, topic: Optional[str] = None) -> str:
-    """
-    Search for information in the document knowledge base.
-    You MUST provide the `topic` parameter if you are confident the user's query belongs to a specific topic.
-    If the topic is unknown or unclear, do not provide this parameter.
-    IMPORTANT GUIDELINE: If called a 2nd or 3rd time, the query must represent a completely different approach or a broader topic.
-    """
-    return await rag_service.retrieve_and_rerank(query)
+
+# ── DemoAgent ──────────────────────────────────────────────────────────────────
 
 class DemoAgent:
+    """
+    Agentic RAG orchestrator that connects to the FastMCP server for tools
+    and the system prompt.
+    """
+
     def __init__(self):
         self.model = ChatOllama(
-            model=settings.LLM_MODEL, 
+            model=settings.LLM_MODEL,
             temperature=0,
             base_url=settings.BASE_URL,
             keep_alive="0s",
-            # reasoning= True,
-            # disable_streaming=False,
-            format="json"
+            format="json",
         )
-        # self.model = ChatGoogleGenerativeAI(
-        #     model="gemini-3-flash-preview", # Hoặc "gemini-1.5-pro" tùy nhu cầu
-        #     api_key= settings.GOOGLE_API_KEY,
-        #     temperature=0.4,
-        #     # model_kwargs={"response_mime_type": "application/json"} 
-        # )
-        
         self.memory = MongoDBSaver(mongo_db.client)
-        self.tools = [search_document_knowledge]
-        self.system_prompt = SYSTEM_PROMPT
 
+        # Populated by connect_mcp()
+        self._mcp_client: MultiServerMCPClient | None = None
+        self.agent = None
+        self.system_prompt: str = ""
+
+    # ── MCP lifecycle ──────────────────────────────────────────────────────────
+
+    async def connect_mcp(self) -> None:
+        """
+        Open a persistent connection to the FastMCP server, discover tools,
+        fetch the system prompt, and build the LangGraph agent.
+
+        Called once from FastAPI's lifespan startup hook.
+        """
+        print(f"🔌 Connecting to MCP server at {settings.MCP_SERVER_URL} …")
+
+        self._mcp_client = MultiServerMCPClient(
+            {
+                "rag_tools": {
+                    "url": settings.MCP_SERVER_URL,
+                    "transport": "streamable_http",
+                }
+            }
+        )
+
+        # 1. Discover tools exposed by the MCP server
+        # In langchain-mcp-adapters >= 0.1.0, get_tools() is async and handles connection
+        # We wrap this in a retry loop because mcp-server needs time to load heavy models into VRAM
+        import asyncio
+        max_retries = 60
+        for i in range(max_retries):
+            try:
+                tools = await self._mcp_client.get_tools()
+                print(f"✅ MCP tools loaded: {[t.name for t in tools]}")
+                break
+            except Exception as e:
+                if i == max_retries - 1:
+                    print(f"❌ Failed to connect to MCP server after {max_retries} attempts.")
+                    raise e
+                print(f"⏳ Waiting for MCP server to start... (Attempt {i+1}/{max_retries}): {e}")
+                await asyncio.sleep(4)
+
+        # 2. Fetch the system prompt from the MCP server
+        # We need to use the session manager context or directly access it.
+        # Let's try directly accessing the session, but wait, if we need a context manager for the session...
+        # The error suggests: async with client.session("server_name") as session:
+        async with self._mcp_client.session("rag_tools") as session:
+            prompt_result = await session.get_prompt("rag_system_prompt")
+        self.system_prompt = prompt_result.messages[0].content.text
+        print("✅ System prompt fetched from MCP server.")
+
+        # 3. Build the LangGraph agent with the remote tools & prompt
         self.agent = create_agent(
             model=self.model,
-            tools=self.tools,
+            tools=tools,
             system_prompt=self.system_prompt,
             checkpointer=self.memory,
-            middleware=[trim_messages]
+            middleware=[trim_messages],
         )
+        print("🚀 DemoAgent is ready.")
 
-    async def ask(self, query: str, thread_id: str = "1") -> dict:
+    async def disconnect_mcp(self) -> None:
+        """
+        Close the MCP connection gracefully.
+        Called from FastAPI's lifespan shutdown hook.
+        """
+        if self._mcp_client is not None:
+            self._mcp_client = None
+            print("🔌 MCP client disconnected.")
+
+    # ── Main interaction method ────────────────────────────────────────────────
+
+    async def ask(self, query: str, thread_id: str = "1", topic: str = "General") -> dict:
         """Main method to interact with the Agent."""
+        if self.agent is None:
+            return {"response": "Agent not initialized. MCP connection may have failed.", "citations": []}
+
         config = {"configurable": {"thread_id": thread_id}}
+
+        dynamic_topic_instruction = (
+            f"CRITICAL: The user has selected the topic '{topic}'. "
+            f"You MUST pass '{topic}' to the `topic` argument when calling "
+            f"`search_document_knowledge`."
+        )
 
         try:
             final_state = await self.agent.ainvoke(
-                {   
-                    "messages": [{"role": "human", "content": query}],
-                }, # type: ignore
-                config=config # type: ignore
+                {
+                    "messages": [
+                        {"role": "system", "content": dynamic_topic_instruction},
+                        {"role": "human", "content": query},
+                    ],
+                },
+                config=config,
             )
 
             messages = final_state.get("messages", [])
             if not messages:
                 return {"response": "No answer found.", "citations": []}
-            
+
             final_message = messages[-1]
-            # ==================== DEBUG THÊM VÀO ĐÂY ====================
-            print("\n" + "="*80)
+
+            # ── Debug logging ──────────────────────────────────────────────────
+            print("\n" + "=" * 80)
             print("🔍 DEBUG REASONING - FINAL MESSAGE")
             print(f"Type: {type(final_message).__name__}")
-            
-            # 1. In toàn bộ object để xem cấu trúc
             print("\n--- Full final_message ---")
             print(final_message)
-            
-            # 2. In content (phần chính bạn đang lấy)
             print("\n--- .content ---")
-            print(repr(final_message.content))   # dùng repr() để thấy ký tự ẩn và <think>
-            
-            # 3. In additional_kwargs (nơi chứa reasoning_content)
+            print(repr(final_message.content))
             print("\n--- .additional_kwargs ---")
             print(final_message.additional_kwargs)
-            
-            # 4. Kiểm tra riêng reasoning_content
             reasoning = final_message.additional_kwargs.get("reasoning_content")
             if reasoning:
-                print("\n--- REASONING_CONTENT (độ dài:", len(reasoning), ") ---")
+                print(f"\n--- REASONING_CONTENT (len: {len(reasoning)}) ---")
                 print(repr(reasoning[:1500] + "..." if len(reasoning) > 1500 else reasoning))
             else:
-                print("\n--- Không có reasoning_content ---")
-            
-            # 5. In response_metadata (có thể có model, finish_reason...)
+                print("\n--- No reasoning_content ---")
             print("\n--- .response_metadata ---")
             print(final_message.response_metadata)
-            print("="*80 + "\n")
-            # ============================================================
+            print("=" * 80 + "\n")
+            # ──────────────────────────────────────────────────────────────────
+
             final_answer = ""
-          
             if hasattr(final_message, "content") and final_message.content:
                 content = final_message.content
                 if isinstance(content, list):
-                    # Extract and join 'text' values from the list of dictionaries
-                    final_answer = "".join([
-                        block.get("text", "") for block in content if isinstance(block, dict)
-                    ])
+                    final_answer = "".join(
+                        block.get("text", "")
+                        for block in content
+                        if isinstance(block, dict)
+                    )
                 else:
                     final_answer = content
 
-            print("\n" + "="*60)
+            print("\n" + "=" * 60)
             print("🔍 FINAL MESSAGE TYPE:", type(final_message).__name__)
             print("🔍 FINAL MESSAGE CONTENT (RAW):")
             print(final_answer)
-            print("="*60 + "\n")
+            print("=" * 60 + "\n")
 
             if isinstance(final_answer, str):
-                match = re.search(r'\{.*\}', final_answer, re.DOTALL)
+                match = re.search(r"\{.*\}", final_answer, re.DOTALL)
                 if match:
-                    json_str = match.group(0)
                     try:
-                        return json.loads(json_str)
+                        return json.loads(match.group(0))
                     except json.JSONDecodeError:
                         return {"response": final_answer, "citations": []}
-                else:
-                    return {"response": final_answer, "citations": []}
+                return {"response": final_answer, "citations": []}
 
             if isinstance(final_answer, dict):
                 return final_answer

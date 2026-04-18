@@ -1,3 +1,8 @@
+from fastmcp import FastMCP
+from mcp.types import TextContent
+
+
+# ── Raw system prompt text ─────────────────────────────────────────────────────
 SYSTEM_PROMPT = """You are a Document Assistant specialized in extracting precise information from search results.
 
 OUTPUT SCHEMA STRICT JSON FORMAT: 
@@ -42,3 +47,17 @@ Correct Output:
   }]
 }
 """
+
+
+def register_prompt(mcp: FastMCP) -> None:
+    """
+    Register the agent system prompt as an MCP prompt resource.
+
+    The FastAPI backend fetches this prompt at startup via the MCP session
+    (session.get_prompt("rag_system_prompt")) so changes only require
+    redeploying the MCP server — the backend picks them up automatically.
+    """
+
+    @mcp.prompt(name="rag_system_prompt")
+    def rag_system_prompt() -> str:
+        return SYSTEM_PROMPT
