@@ -2,13 +2,20 @@
 # Adjust the CUDA / cuDNN version to match your host driver.
 FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 
+# ── Certificates for Corporate Proxy / Internet Block ─────────────────────────
+USER root
+COPY combined.pem /usr/local/share/ca-certificates/combined.crt
+RUN apt-get update && apt-get install -y ca-certificates && update-ca-certificates
+
 # ── System dependencies ────────────────────────────────────────────────────────
-ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.11 \
     python3.11-dev \
     python3.11-venv \
-    ca-certificates \
     curl \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
@@ -30,18 +37,15 @@ RUN pip install --no-cache-dir "poetry==$POETRY_VERSION"
 WORKDIR /app
 
 # ── Install only the [mcp] dependency group ────────────────────────────────────
-# Copy lock files first to maximise Docker layer caching.
-# Changing source code won't invalidate this layer.
 COPY pyproject.toml poetry.lock ./
-RUN poetry install --only mcp --no-root --no-cache
+RUN poetry lock && \
+    poetry install --only mcp --no-root --no-cache
 
 # ── Copy MCP server source code ────────────────────────────────────────────────
 COPY mcp_server/ ./mcp_server/
 
-# ── Optional: copy SSL certs if your Qdrant / MinIO endpoint needs them ────────
-# COPY combined.pem /app/combined.pem
-# ENV SSL_CERT_FILE=/app/combined.pem
-# ENV REQUESTS_CA_BUNDLE=/app/combined.pem
+# Keep a copy of combined.pem in working directory just in case
+COPY combined.pem ./combined.pem
 
 # ── Expose the MCP HTTP port ───────────────────────────────────────────────────
 EXPOSE 8001

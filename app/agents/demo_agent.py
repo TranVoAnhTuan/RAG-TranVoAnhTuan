@@ -22,9 +22,12 @@ Communication with MCP server
 import json
 import re
 import gc
+import traceback
+import uuid
 from typing import Any
 
-from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI
+# from langchain_ollama import ChatOllama
 from langchain.agents import create_agent, AgentState
 from langchain.agents.middleware import before_model
 from langchain.messages import RemoveMessage
@@ -34,7 +37,7 @@ from langgraph.checkpoint.mongodb import MongoDBSaver
 
 from app.core.config import settings
 from app.db.mongo_db import mongo_db
-
+import asyncio
 
 # ── Memory trimming middleware ─────────────────────────────────────────────────
 
@@ -100,6 +103,56 @@ def trim_messages(state: AgentState, runtime: Any) -> dict | None:
     }
 
 
+# ── Gemma Tool Call Parser ─────────────────────────────────────────────────────
+# vLLM doesn't translate Gemma's native <|tool_call> tags into OpenAI tool_calls.
+# This wrapper intercepts the raw text and converts it to structured tool_calls.
+
+def _parse_gemma_tool_calls(content: str) -> list[dict]:
+    """Parse <|tool_call>call:name{key:<|"|>val<|"|>}<tool_call|> into tool_calls."""
+    calls = []
+    for m in re.finditer(
+        r'<\|tool_call\|?>call:([a-zA-Z_][a-zA-Z0-9_]*)\{(.*?)\}<\|?tool_call\|?>',
+        content, re.DOTALL,
+    ):
+        name, raw_args = m.group(1), m.group(2)
+        args = {
+            am.group(1): am.group(2)
+            for am in re.finditer(r'([a-zA-Z_][a-zA-Z0-9_]*):<\|"\|>(.*?)<\|"\|>', raw_args, re.DOTALL)
+        }
+        if name:
+            calls.append({"name": name, "args": args, "id": f"call_{uuid.uuid4().hex[:12]}"})
+    return calls
+
+
+class _GemmaToolFix:
+    """Thin wrapper: patches tool_calls onto AIMessages when vLLM returns raw tags."""
+
+    def __init__(self, model):
+        self._model = model
+
+    def bind_tools(self, tools, **kwargs):
+        self._model = self._model.bind_tools(tools, **kwargs)
+        return self
+
+    async def ainvoke(self, input, config=None, **kwargs):
+        res = await self._model.ainvoke(input, config=config, **kwargs)
+        if (
+            not getattr(res, "tool_calls", None)
+            and hasattr(res, "content")
+            and isinstance(res.content, str)
+            and "<|tool_call" in res.content
+        ):
+            parsed = _parse_gemma_tool_calls(res.content)
+            if parsed:
+                print(f"🛠️ [GemmaFix] Converted {len(parsed)} tag-based tool call(s) to structured format.")
+                res.tool_calls = parsed
+                res.content = ""  # Clear text so agent doesn't treat it as a final answer
+        return res
+
+    def __getattr__(self, name):
+        return getattr(self._model, name)
+
+
 # ── DemoAgent ──────────────────────────────────────────────────────────────────
 
 class DemoAgent:
@@ -109,13 +162,14 @@ class DemoAgent:
     """
 
     def __init__(self):
-        self.model = ChatOllama(
+        self.model = _GemmaToolFix(ChatOpenAI(
             model=settings.LLM_MODEL,
             temperature=0,
             base_url=settings.BASE_URL,
-            keep_alive="0s",
-            format="json",
-        )
+            api_key="none",
+            timeout=60,
+            max_retries=2,
+        ))
         self.memory = MongoDBSaver(mongo_db.client)
 
         # Populated by connect_mcp()
@@ -146,7 +200,7 @@ class DemoAgent:
         # 1. Discover tools exposed by the MCP server
         # In langchain-mcp-adapters >= 0.1.0, get_tools() is async and handles connection
         # We wrap this in a retry loop because mcp-server needs time to load heavy models into VRAM
-        import asyncio
+        
         max_retries = 60
         for i in range(max_retries):
             try:
@@ -275,4 +329,5 @@ class DemoAgent:
 
         except Exception as e:
             print(f"Agent execution error: {e}")
+            traceback.print_exc() # Show full error details in logs
             return {"response": f"An error occurred: {str(e)}", "citations": []}
