@@ -314,6 +314,7 @@ def inject_css():
 
 
 # ── API helpers ──────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=60)
 def fetch_topics() -> list[str]:
 	try:
 		res = requests.get(f"{API_URL}/topics", timeout=5)
@@ -332,11 +333,19 @@ def init_state():
 		st.session_state.messages = []
 	if "available_topics" not in st.session_state:
 		st.session_state.available_topics = fetch_topics()
+	else:
+		# Merge fresh topics from backend without overwriting locally added ones
+		fresh_topics = fetch_topics()
+		for t in fresh_topics:
+			if t not in st.session_state.available_topics:
+				st.session_state.available_topics.append(t)
 	if "active_topic" not in st.session_state:
 		topics = st.session_state.available_topics
 		st.session_state.active_topic = topics[0] if topics else "General"
 	if "trigger_send" not in st.session_state:
 		st.session_state.trigger_send = None
+	if "last_upload_status" not in st.session_state:
+		st.session_state.last_upload_status = None
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────────
@@ -378,9 +387,20 @@ def render_sidebar():
 			st.rerun()
 
 		st.divider()
-
+		
 		# Upload
 		st.markdown(f"<p style='font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#475569;margin-bottom:0.5rem;'>Index Document → {st.session_state.active_topic}</p>", unsafe_allow_html=True)
+		
+		# Show last upload status if exists
+		if st.session_state.last_upload_status:
+			status_type, status_msg = st.session_state.last_upload_status
+			if status_type == "success":
+				st.success(status_msg)
+			else:
+				st.warning(status_msg)
+			# Clear it after showing so it doesn't stay forever if they navigate around, 
+			# but it will stay for this rerun.
+			st.session_state.last_upload_status = None
 		uploaded_file = st.file_uploader(
 			"upload", type=["pdf"], label_visibility="collapsed",
 			key="file_uploader"
@@ -393,10 +413,17 @@ def render_sidebar():
 							f"{API_URL}/upload",
 							files={"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")},
 							data={"topic": st.session_state.active_topic},
-							timeout=120,
+							timeout=300,
 						)
 						if res.status_code == 200:
-							st.toast("✅ Indexed successfully!", icon="✅")
+							result = res.json()
+							msg = result.get("message", "Done!")
+							
+							if "Skipped" in msg or "already exists" in msg:
+								st.session_state.last_upload_status = ("warning", msg)
+							else:
+								st.session_state.last_upload_status = ("success", msg)
+								
 							st.session_state.available_topics = fetch_topics()
 							st.rerun()
 						else:
@@ -514,7 +541,7 @@ def render_chat():
 						"thread_id": st.session_state.thread_id,
 						"topic": active,
 					},
-					timeout=120,
+					timeout=300,
 				)
 				if res.status_code == 200:
 					raw = res.json().get("answer", {})
