@@ -4,11 +4,13 @@ import asyncio
 from app.agents.demo_agent import DemoAgent
 
 async def process_testset():
-    input_file = "/home/jacktran/RAG/experiment/rag_agentic_system/testset_updated.json"
-    output_file = "testset_with_answers.json"
+    input_file = "evaluation/testset_updated.json"
+    output_file = "evaluation/testset_with_answers.json"
 
     print("🚀 Initializing Agent...")
     agent = DemoAgent()
+    await agent.connect_mcp()
+    print("✅ Agent connected to MCP server.")
 
     # 1. TÍNH NĂNG RESUME: Ưu tiên đọc file output nếu đã có (để tiếp tục phần đang làm dở)
     if os.path.exists(output_file):
@@ -27,22 +29,27 @@ async def process_testset():
         if i % 10 == 0 and i != 0:
             print("♻️ Restarting agent to free memory...")
             agent = DemoAgent()
+            await agent.connect_mcp()
         # BỎ QUA nếu câu này đã được trả lời thành công trước đó
-        # (Điều kiện: có key "answer" và không phải là thông báo lỗi)
-        if "answer" in item and item["answer"] and not item["answer"].startswith("Error:"):
-            print(f"[{i+1}/{len(data)}] Đã có câu trả lời, bỏ qua: {item.get('question')}")
-            continue
+        # (Điều kiện: có key "answer", không phải lỗi, và không phải lỗi "Agent not initialized")
+        if "answer" in item and item["answer"]:
+            is_error = item["answer"].startswith("Error:")
+            is_uninitialized = "Agent not initialized" in item["answer"]
+            if not is_error and not is_uninitialized:
+                print(f"[{i+1}/{len(data)}] Đã có câu trả lời, bỏ qua: {item.get('question')}")
+                continue
 
         question = item.get("question")
+        topic = item.get("topic", "General")
         if not question:
             continue
 
-        print(f"[{i+1}/{len(data)}] Đang xử lý: {question}")
+        print(f"[{i+1}/{len(data)}] Đang xử lý ({topic}): {question}")
         thread_id = f"eval_thread_{i}"
 
         try:
-            # Chạy qua agent
-            result = await agent.ask(question, thread_id=thread_id)
+            # Chạy qua agent với topic tương ứng
+            result = await agent.ask(question, thread_id=thread_id, topic=topic)
             
             # SỬA TẠI ĐÂY: Lấy trực tiếp từ result vì Agent không trả về key "answer" bọc ngoài
             item["answer"] = result.get("response", "No answer found.")
