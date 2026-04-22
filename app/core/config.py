@@ -1,8 +1,10 @@
 import os
 from dotenv import load_dotenv
 import json
+import logging
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 class Settings:
     API_KEY = os.getenv("API_KEY")
@@ -44,7 +46,7 @@ class Settings:
         try:
             AVAILABLE_TOPICS = json.loads(_topics_env)
         except json.JSONDecodeError:
-            print("⚠️ Lỗi parse AVAILABLE_TOPICS_JSON trong .env, sử dụng topics mặc định.")
+            logger.warning("⚠️ Lỗi parse AVAILABLE_TOPICS_JSON trong .env, sử dụng topics mặc định.")
             AVAILABLE_TOPICS = _default_topics
     else:
         AVAILABLE_TOPICS = _default_topics

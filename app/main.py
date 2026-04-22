@@ -1,13 +1,23 @@
 import gc
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.api.routes import router, agent
 
 
+# ── Global Logging Configuration ──────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()],
+)
+logger = logging.getLogger(__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Startup ────────────────────────────────────────────────────────────────
-    print("🚀 Starting FastAPI server…")
+    logger.info("🚀 Starting FastAPI server…")
 
     # Open the MCP connection and build the agent graph.
     # This fetches tools + system prompt from the FastMCP server.
@@ -16,14 +26,14 @@ async def lifespan(app: FastAPI):
     yield
 
     # ── Shutdown ───────────────────────────────────────────────────────────────
-    print("\n🛑 Received shutdown signal. Cleaning up…")
+    logger.info("🛑 Received shutdown signal. Cleaning up…")
 
     # Gracefully close the MCP client connection
     await agent.disconnect_mcp()
 
     # Force Python GC to reclaim any remaining memory
     gc.collect()
-    print("🧹 Cleanup complete. Goodbye!\n")
+    logger.info("🧹 Cleanup complete. Goodbye!")
 
 
 # ── FastAPI application ────────────────────────────────────────────────────────

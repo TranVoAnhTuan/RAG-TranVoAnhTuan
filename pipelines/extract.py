@@ -1,6 +1,7 @@
 import os
 import gc
 import asyncio
+import logging
 import pandas as pd
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.base_models import InputFormat
@@ -9,15 +10,17 @@ from docling.datamodel.accelerator_options import AcceleratorOptions
 from .state import IngestionState
 import torch
 
-def print_vram(step_name):
-    """Helper function to print VRAM capacity"""
+logger = logging.getLogger(__name__)
+
+def log_vram(step_name):
+    """Helper function to log VRAM capacity"""
     if torch.cuda.is_available():
         allocated = torch.cuda.memory_allocated() / (1024 ** 2)
         reserved = torch.cuda.memory_reserved() / (1024 ** 2)
-        print(f"📊 [{step_name}] VRAM Allocated: {allocated:.2f} MB | Reserved: {reserved:.2f} MB")
+        logger.info(f"📊 [{step_name}] VRAM Allocated: {allocated:.2f} MB | Reserved: {reserved:.2f} MB")
 
 def _process_with_docling(file_path: str) -> dict:
-    print("Loading Docling...")
+    logger.info("Loading Docling...")
     pipeline_options = PdfPipelineOptions()
     pipeline_options.do_ocr = True
     pipeline_options.do_table_structure = True
@@ -38,11 +41,11 @@ def _process_with_docling(file_path: str) -> dict:
                 if not df.empty:
                     tables_data.append({"table_number": i, "data": df.to_dict(orient="records")})
             except Exception as e:
-                print(f"Table error {i}: {e}")
+                logger.error(f"Table error {i}: {e}")
 
     markdown_text = doc.export_to_markdown()
 
-    print("Cleaning Docling RAM...")
+    logger.info("Cleaning Docling RAM...")
     del converter, result, doc
     gc.collect()
 
@@ -50,7 +53,7 @@ def _process_with_docling(file_path: str) -> dict:
         torch.cuda.empty_cache() 
         torch.cuda.ipc_collect()
         
-    print_vram("4. AFTER CLEANUP")
+    log_vram("4. AFTER CLEANUP")
     return {"markdown": markdown_text, "tables": tables_data}
 
 async def extract_node(state: IngestionState):

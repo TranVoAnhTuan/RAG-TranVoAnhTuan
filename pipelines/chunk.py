@@ -1,10 +1,13 @@
 import gc
+import logging
 from transformers import AutoTokenizer
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 from .state import IngestionState
 from app.core.config import settings
 
 from app.core.model_manager import model_manager
+
+logger = logging.getLogger(__name__)
 
 def split_by_token_with_paragraph(text, tokenizer, max_tokens=512):
     tokens = tokenizer.encode(text, add_special_tokens=False)
@@ -26,7 +29,7 @@ def split_by_token_with_paragraph(text, tokenizer, max_tokens=512):
     return chunks
 
 def chunk_node(state: IngestionState):
-    print("Loading Tokenizer for chunking...")
+    logger.info("Loading Tokenizer for chunking...")
     # Load tokenizer locally
     tokenizer = model_manager.get_tokenizer()
     
@@ -47,7 +50,7 @@ def chunk_node(state: IngestionState):
                 "Header_2": doc.metadata.get("Header_2"),
             })
 
-    print("Cleaning Tokenizer RAM...")
+    logger.info("Cleaning Tokenizer RAM...")
     del tokenizer
     gc.collect()
 

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Optional
 
 from qdrant_client import AsyncQdrantClient, models
@@ -6,6 +7,7 @@ from qdrant_client import AsyncQdrantClient, models
 from mcp_server.config import mcp_settings
 from mcp_server.model_manager import model_manager
 
+logger = logging.getLogger(__name__)
 
 class RAGService:
     """
@@ -143,7 +145,7 @@ class RAGService:
 CONTENT: {content}
 METADATA: {{"Header_1": "{h1}", "Header_2": "{h2}", "file_url": "{f_url}"}}
 """
-        print(search_result)
+        logger.info(search_result)
         return search_result
 
 

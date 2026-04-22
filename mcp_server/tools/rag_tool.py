@@ -4,7 +4,6 @@ from fastmcp import FastMCP
 
 from mcp_server.rag_service import rag_service
 
-
 def register_tools(mcp: FastMCP) -> None:
     """
     Register all RAG tools onto the FastMCP instance.
@@ -29,3 +28,5 @@ def register_tools(mcp: FastMCP) -> None:
         query: str, topic: Optional[str] = None
     ) -> str:
         return await rag_service.retrieve_and_rerank(query, filter_topic=topic)
+
+
