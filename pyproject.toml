@@ -52,6 +52,7 @@ fastmcp = "^3.2.4"
 mcp = "^1.27.0"
 fastapi = "^0.136.0"
 langchain-mcp-adapters = "^0.2.2"
+tavily-python = "^0.7.23"
 
 [build-system]
 requires = ["poetry-core"]
@@ -80,6 +81,7 @@ torch = "*"
 # Utilities
 python-dotenv = "*"
 huggingface-hub = "^0.34.0"
+tavily-python = "^0.7.23"
 
 # ── UI / Streamlit dependency group ──────────────────────────────────────────
 # Installed in the frontend Docker container with:

@@ -346,6 +346,8 @@ def init_state():
 		st.session_state.trigger_send = None
 	if "last_upload_status" not in st.session_state:
 		st.session_state.last_upload_status = None
+	if "pending_interrupt" not in st.session_state:
+		st.session_state.pending_interrupt = None
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────────
@@ -515,77 +517,128 @@ def render_chat():
 							""", unsafe_allow_html=True)
 
 	# ── Input ────────────────────────────────────────────────────────────────────
-	with bottom():
-		user_input = st.chat_input(f"Ask about '{active}'…")
+	if st.session_state.pending_interrupt:
+		st.warning("Please approve or reject the pending action below before asking another question.")
+		prompt = None
+		user_input = None
+	else:
+		with bottom():
+			user_input = st.chat_input(f"Ask about '{active}'…")
 
 	prompt = user_input or st.session_state.trigger_send
-	if not prompt:
+	if not prompt and not st.session_state.pending_interrupt:
 		return
 
-	st.session_state.trigger_send = None
-	st.session_state.messages.append({"role": "user", "content": prompt})
+	if prompt:
+		st.session_state.trigger_send = None
+		st.session_state.messages.append({"role": "user", "content": prompt})
 
-	with st.chat_message("user"):
-		st.markdown(
-			f'<div class="user-row"><div class="user-bubble">{prompt}</div></div>',
-			unsafe_allow_html=True
-		)
+		with st.chat_message("user"):
+			st.markdown(
+				f'<div class="user-row"><div class="user-bubble">{prompt}</div></div>',
+				unsafe_allow_html=True
+			)
 
-	with st.chat_message("assistant"):
-		with st.spinner("Searching knowledge base…"):
+		with st.chat_message("assistant"):
+			with st.spinner("Searching knowledge base…"):
+				try:
+					res = requests.post(
+						f"{API_URL}/chat",
+						json={
+							"query": prompt,
+							"thread_id": st.session_state.thread_id,
+							"topic": active,
+						},
+						timeout=300,
+					)
+					if res.status_code == 200:
+						raw = res.json().get("answer", {})
+						if isinstance(raw, dict) and raw.get("interrupt"):
+							st.session_state.pending_interrupt = raw.get("action_requests", [])
+							st.rerun()
+						
+						if isinstance(raw, dict):
+							answer = raw.get("response", "No answer.")
+							citations = raw.get("citations", [])
+						else:
+							answer = str(raw)
+							citations = []
+
+						st.markdown(f"""
+						<div class="assistant-row">
+							<div class="assistant-avatar">⚡</div>
+							<div class="assistant-content">{answer}</div>
+						</div>
+						""", unsafe_allow_html=True)
+
+						if citations:
+							with st.expander(f"📚 {len(citations)} Source(s)"):
+								for i, cite in enumerate(citations, 1):
+									h1 = cite.get("Header_1", "Unknown")
+									h2 = cite.get("Header_2", "")
+									url = cite.get("file_url", "")
+									link_html = f'<a class="citation-link" href="{url}" target="_blank">🔗 View source PDF</a>' if url else ""
+									st.markdown(f"""
+									<div class="citation-card">
+										<div class="citation-h1">{i}. {h1}</div>
+										{"<div class='citation-h2'>" + h2 + "</div>" if h2 else ""}
+										{link_html}
+									</div>
+									""", unsafe_allow_html=True)
+
+						st.session_state.messages.append({
+							"role": "assistant",
+							"content": answer,
+							"citations": citations,
+						})
+					else:
+						st.error(f"Backend error {res.status_code}: {res.text}")
+
+				except requests.exceptions.ConnectionError:
+					st.error("Cannot connect to the backend. Is FastAPI running?")
+				except requests.exceptions.Timeout:
+					st.error("Request timed out. The agent may still be processing — try again.")
+
+	# ── Pending Interrupt UI ─────────────────────────────────────────────────────
+	def resume_agent(decision):
+		st.session_state.pending_interrupt = None
+		with st.spinner("Resuming agent..."):
 			try:
 				res = requests.post(
-					f"{API_URL}/chat",
-					json={
-						"query": prompt,
-						"thread_id": st.session_state.thread_id,
-						"topic": active,
-					},
-					timeout=300,
+					f"{API_URL}/chat/resume",
+					json={"thread_id": st.session_state.thread_id, "decision": decision},
+					timeout=300
 				)
 				if res.status_code == 200:
 					raw = res.json().get("answer", {})
+					if isinstance(raw, dict) and raw.get("interrupt"):
+						st.session_state.pending_interrupt = raw.get("action_requests", [])
+						st.rerun()
+					
 					if isinstance(raw, dict):
 						answer = raw.get("response", "No answer.")
 						citations = raw.get("citations", [])
 					else:
 						answer = str(raw)
 						citations = []
-
-					st.markdown(f"""
-					<div class="assistant-row">
-						<div class="assistant-avatar">⚡</div>
-						<div class="assistant-content">{answer}</div>
-					</div>
-					""", unsafe_allow_html=True)
-
-					if citations:
-						with st.expander(f"📚 {len(citations)} Source(s)"):
-							for i, cite in enumerate(citations, 1):
-								h1 = cite.get("Header_1", "Unknown")
-								h2 = cite.get("Header_2", "")
-								url = cite.get("file_url", "")
-								link_html = f'<a class="citation-link" href="{url}" target="_blank">🔗 View source PDF</a>' if url else ""
-								st.markdown(f"""
-								<div class="citation-card">
-									<div class="citation-h1">{i}. {h1}</div>
-									{"<div class='citation-h2'>" + h2 + "</div>" if h2 else ""}
-									{link_html}
-								</div>
-								""", unsafe_allow_html=True)
-
-					st.session_state.messages.append({
-						"role": "assistant",
-						"content": answer,
-						"citations": citations,
-					})
+					st.session_state.messages.append({"role": "assistant", "content": answer, "citations": citations})
+					st.rerun()
 				else:
 					st.error(f"Backend error {res.status_code}: {res.text}")
+			except Exception as e:
+				st.error(f"Error resuming: {e}")
 
-			except requests.exceptions.ConnectionError:
-				st.error("Cannot connect to the backend. Is FastAPI running?")
-			except requests.exceptions.Timeout:
-				st.error("Request timed out. The agent may still be processing — try again.")
+	if st.session_state.pending_interrupt:
+		st.markdown("### ⚠️ Agent requires your approval")
+		for req in st.session_state.pending_interrupt:
+			st.info(f"**Tool:** {req.get('name')}\n\n**Arguments:** {req.get('arguments')}")
+		col1, col2 = st.columns(2)
+		with col1:
+			if st.button("✅ Approve", use_container_width=True, type="primary"):
+				resume_agent("approve")
+		with col2:
+			if st.button("❌ Reject", use_container_width=True):
+				resume_agent("reject")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────────
