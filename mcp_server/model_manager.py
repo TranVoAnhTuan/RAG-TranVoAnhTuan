@@ -1,4 +1,5 @@
 import gc
+import logging
 import torch
 from contextlib import contextmanager
 from sentence_transformers import SentenceTransformer
@@ -6,6 +7,7 @@ from fastembed import SparseTextEmbedding
 from transformers import AutoModel
 from mcp_server.config import mcp_settings
 
+logger = logging.getLogger(__name__)
 
 class ModelManager:
     """
@@ -26,11 +28,11 @@ class ModelManager:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _print_vram(self, step_name: str):
+    def _log_vram(self, step_name: str):
         if torch.cuda.is_available():
             allocated = torch.cuda.memory_allocated() / (1024**2)
             reserved = torch.cuda.memory_reserved() / (1024**2)
-            print(
+            logger.info(
                 f"📊 [VRAM] {step_name} | Allocated: {allocated:.2f} MB | Reserved: {reserved:.2f} MB"
             )
 
@@ -47,7 +49,7 @@ class ModelManager:
 
     def get_sparse_model(self) -> SparseTextEmbedding:
         if self._sparse_model is None:
-            print("🚀 [MCP] Loading Sparse Model (CPU)…")
+            logger.info("🚀 [MCP] Loading Sparse Model (CPU)…")
             self._sparse_model = SparseTextEmbedding(
                 model_name=mcp_settings.SPARSE_MODEL_NAME
             )
@@ -59,7 +61,7 @@ class ModelManager:
 
     def _load_dense_model(self) -> SentenceTransformer:
         if self._dense_model is None:
-            print("🚀 [MCP] Loading Dense Model into CPU memory…")
+            logger.info("🚀 [MCP] Loading Dense Model into CPU memory…")
             self._dense_model = SentenceTransformer(
                 mcp_settings.DENSE_MODEL_NAME,
                 trust_remote_code=True,
@@ -71,21 +73,21 @@ class ModelManager:
     @contextmanager
     def use_dense_model_on_gpu(self):
         """Temporarily move Dense Model to GPU, yield it, then move back to CPU."""
-        print("\n" + "=" * 50)
-        self._print_vram("1. BEFORE LOADING DENSE")
+        logger.info("=" * 50)
+        self._log_vram("1. BEFORE LOADING DENSE")
         model = self._load_dense_model()
         model.to("cuda")
         torch.cuda.empty_cache()
-        self._print_vram("2. USING DENSE (PEAK VRAM)")
+        self._log_vram("2. USING DENSE (PEAK VRAM)")
         try:
             yield model
         finally:
-            print("🧹 [MCP] Unloading Dense Model from VRAM…")
+            logger.info("🧹 [MCP] Unloading Dense Model from VRAM…")
             model.to("cpu")
             torch.cuda.synchronize()
             self._clear_vram()
-            self._print_vram("3. AFTER CLEANING DENSE")
-            print("=" * 50 + "\n")
+            self._log_vram("3. AFTER CLEANING DENSE")
+            logger.info("=" * 50)
 
     # ------------------------------------------------------------------
     # Reranker model (CPU-resident; borrowed to GPU during inference)
@@ -93,7 +95,7 @@ class ModelManager:
 
     def _load_reranker_model(self) -> AutoModel:
         if self._reranker_model is None:
-            print("🚀 [MCP] Loading Jina Reranker into CPU memory…")
+            logger.info("🚀 [MCP] Loading Jina Reranker into CPU memory…")
             self._reranker_model = AutoModel.from_pretrained(
                 mcp_settings.RERANKER_MODEL_NAME,
                 torch_dtype=torch.float16,
@@ -106,22 +108,23 @@ class ModelManager:
     @contextmanager
     def use_reranker_model(self):
         """Temporarily move Reranker to GPU, yield it, then move back to CPU."""
-        print("\n" + "=" * 50)
-        self._print_vram("1. BEFORE LOADING RERANKER")
+        logger.info("=" * 50)
+        self._log_vram("1. BEFORE LOADING RERANKER")
         model = self._load_reranker_model()
         model.to("cuda")
         torch.cuda.empty_cache()
-        self._print_vram("2. USING RERANKER (PEAK VRAM)")
+        self._log_vram("2. USING RERANKER (PEAK VRAM)")
         try:
             yield model
         finally:
-            print("🧹 [MCP] Removing Reranker from VRAM…")
+            logger.info("🧹 [MCP] Removing Reranker from VRAM…")
             model.to("cpu")
             torch.cuda.synchronize()
             self._clear_vram()
-            self._print_vram("3. AFTER CLEANING RERANKER")
-            print("=" * 50 + "\n")
+            self._log_vram("3. AFTER CLEANING RERANKER")
+            logger.info("=" * 50)
 
 
 # Singleton — shared across the MCP server process
 model_manager = ModelManager()
+

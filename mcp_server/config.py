@@ -20,6 +20,6 @@ class MCPSettings:
     CONTEXT_LENGTH = int(os.getenv("CONTEXT_LENGTH", 8000))
 
     HUGGINGFACE_ACCESS_TOKEN = os.getenv("HUGGINGFACE_ACCESS_TOKEN")
-
+    TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
 mcp_settings = MCPSettings()

@@ -1,7 +1,10 @@
 import hashlib
+import logging
 from .state import IngestionState
 from app.db.sqlite_db import sqlite_db
 from app.db.minio_client import minio_client
+
+logger = logging.getLogger(__name__)
 
 def get_file_hash(file_path):
     hasher = hashlib.sha256()
@@ -13,7 +16,7 @@ def get_file_hash(file_path):
     return hasher.hexdigest()
 
 def check_duplicate_node(state: IngestionState):
-    print("🔍 Checking for duplicate documents...")
+    logger.info("🔍 Checking for duplicate documents...")
     file_path = state["file_path"]
     filename = state.get("filename", "unknown.pdf")
 
@@ -25,7 +28,7 @@ def check_duplicate_node(state: IngestionState):
         existing_doc = cursor.fetchone()
 
     if existing_doc:
-        print(f"⚠️ Document already exists (Hash: {file_hash}). Skipping remaining steps.")
+        logger.warning(f"⚠️ Document already exists (Hash: {file_hash}). Skipping remaining steps.")
         return {
             "file_hash": file_hash,
             "is_duplicate": True,
@@ -35,7 +38,7 @@ def check_duplicate_node(state: IngestionState):
     
     topic = state.get("topic", "General")
     
-    print("🆕 New document detected. Saving to MinIO...")
+    logger.info("🆕 New document detected. Saving to MinIO...")
     object_name = f"{file_hash}_{filename}"
     minio_url = minio_client.upload_file(file_path, object_name)
 

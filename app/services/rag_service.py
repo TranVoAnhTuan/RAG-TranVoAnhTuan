@@ -2,8 +2,11 @@ from qdrant_client import models
 from app.db.qdrant_db import QdrantDatabase
 from app.core.config import settings
 import asyncio
+import logging
 from app.core.model_manager import model_manager
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 class RAGService:
     def __init__(self):
@@ -118,5 +121,5 @@ class RAGService:
 CONTENT: {content}
 METADATA: {{"Header_1": "{h1}", "Header_2": "{h2}", "file_url": "{f_url}"}}
 """
-        print(search_result)
+        logger.info(search_result)
         return search_result

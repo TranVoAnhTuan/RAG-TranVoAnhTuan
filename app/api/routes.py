@@ -1,5 +1,6 @@
 import os
 import shutil
+import logging
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from pydantic import BaseModel
 from pipelines.langgraph_ingestion import ingestion_app 
@@ -7,6 +8,7 @@ from app.agents.demo_agent import DemoAgent
 import traceback
 from app.db.sqlite_db import sqlite_db
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 agent = DemoAgent()
 
@@ -14,6 +16,10 @@ class QueryRequest(BaseModel):
     query: str
     thread_id: str = "default_thread"
     topic: str = "General"
+
+class ResumeRequest(BaseModel):
+    thread_id: str
+    decision: str
 
 @router.get("/topics")
 async def get_topics():
@@ -68,5 +74,17 @@ async def chat_with_agent(request: QueryRequest):
         )
         return {"answer": answer}
     except Exception as e:
-        traceback.print_exc()
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/chat/resume")
+async def resume_chat(request: ResumeRequest):
+    try:
+        answer = await agent.resume(
+            thread_id=request.thread_id, 
+            decision=request.decision
+        )
+        return {"answer": answer}
+    except Exception as e:
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))

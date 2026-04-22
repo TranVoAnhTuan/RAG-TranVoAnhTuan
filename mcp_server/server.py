@@ -9,10 +9,20 @@ Transport: Streamable HTTP (default FastMCP v2 transport)
   Clients connect to:  http://<host>:8001/mcp
 """
 
+import logging
 from fastmcp import FastMCP
 
 from mcp_server.tools.rag_tool import register_tools
+from mcp_server.tools.tavily_tool import register_tavily_tool
 from mcp_server.prompts.system_prompt import register_prompt
+
+# ── Global Logging Configuration ──────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()],
+)
+logger = logging.getLogger(__name__)
 
 # ── Create FastMCP application ─────────────────────────────────────────────────
 mcp = FastMCP(
@@ -26,6 +36,7 @@ mcp = FastMCP(
 
 # ── Register tools and prompts ─────────────────────────────────────────────────
 register_tools(mcp)
+register_tavily_tool(mcp)
 register_prompt(mcp)
 
 
