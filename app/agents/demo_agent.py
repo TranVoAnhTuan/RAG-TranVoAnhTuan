@@ -1,82 +1,41 @@
-import json
-import re
+import asyncio
 import gc
+import json
+import logging
+import re
 import traceback
 import uuid
-import logging
 from typing import Any
-
-from langchain_openai import ChatOpenAI
-# from langchain_ollama import ChatOllama
-from langchain.agents import create_agent, AgentState
-from langchain.agents.middleware import before_model, HumanInTheLoopMiddleware
-from langchain.messages import RemoveMessage
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from langgraph.graph.message import REMOVE_ALL_MESSAGES
-from langgraph.checkpoint.mongodb import MongoDBSaver
-from langgraph.types import Command
 
 from app.core.config import settings
 from app.db.mongo_db import mongo_db
-import asyncio
+from langchain.agents import create_agent, AgentState
+from langchain.messages import RemoveMessage
+from langchain_core.globals import set_llm_cache, get_llm_cache
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_openai import ChatOpenAI
+from langchain_redis import RedisCache
+from langgraph.checkpoint.mongodb import MongoDBSaver
+from langgraph.graph.message import REMOVE_ALL_MESSAGES
+from langgraph.types import Command
 
 logger = logging.getLogger(__name__)
 
-# ── Memory trimming middleware ─────────────────────────────────────────────────
-
-@before_model
 def trim_messages(state: AgentState, runtime: Any) -> dict | None:
-    """
-    Balanced memory trimming:
-    - Keeps System prompt
-    - Keeps ALL User messages
-    - Keeps ALL final Assistant JSON answers
-    - Keeps ONLY the MOST RECENT ToolMessage (latest search result)
-    - Removes all old ToolMessages to prevent memory bloat
-    """
     messages = state["messages"]
-    logger.info("\n=== ALL MESSAGE TYPES ===")
-    for i, msg in enumerate(messages):
-        msg_type = getattr(msg, "type", None)
-        msg_class = type(msg).__name__
-        content_preview = str(msg)[:100] if hasattr(msg, "__str__") else ""
-        logger.info(f"{i}: type='{msg_type}' | class={msg_class}")
-        logger.info(f"   Preview: {content_preview}\n")
-
-    if len(messages) <= 8:
+    if len(messages) <= 12:
         return None
 
+    system_msg = messages[0] if messages and messages[0].type == "system" else None
+    recent_messages = messages[-10:]
+    
     important = []
-    last_tool_message = None
-
-    for msg in messages:
-        msg_type = getattr(msg, "type", None)
-
-        if msg_type == "system":
+    if system_msg:
+        important.append(system_msg)
+    
+    for msg in recent_messages:
+        if msg not in important:
             important.append(msg)
-            continue
-
-        if msg_type == "human":           # Keep every user question
-            important.append(msg)
-            continue
-
-        if msg_type == "ai":
-            # Keep only final answers (no tool_calls)
-            if not getattr(msg, "tool_calls", None):
-                important.append(msg)
-            continue
-
-        if msg_type == "tool":            # Keep ONLY the latest tool result
-            last_tool_message = msg
-
-    if last_tool_message:
-        important.append(last_tool_message)
-
-    # Limit: System + max 5 recent User/Assistant pairs + 1 latest tool
-    if len(important) > 13:
-        system = important[0]
-        recent = important[-12:]
-        important = [system] + recent
 
     return {
         "messages": [
@@ -85,13 +44,7 @@ def trim_messages(state: AgentState, runtime: Any) -> dict | None:
         ]
     }
 
-
-# ── Gemma Tool Call Parser ─────────────────────────────────────────────────────
-# vLLM doesn't translate Gemma's native <|tool_call> tags into OpenAI tool_calls.
-# This wrapper intercepts the raw text and converts it to structured tool_calls.
-
 def _parse_gemma_tool_calls(content: str) -> list[dict]:
-    """Parse <|tool_call>call:name{key:<|"|>val<|"|>}<tool_call|> into tool_calls."""
     calls = []
     for m in re.finditer(
         r'<\|tool_call\|?>call:([a-zA-Z_][a-zA-Z0-9_]*)\{(.*?)\}<\|?tool_call\|?>',
@@ -106,10 +59,7 @@ def _parse_gemma_tool_calls(content: str) -> list[dict]:
             calls.append({"name": name, "args": args, "id": f"call_{uuid.uuid4().hex[:12]}"})
     return calls
 
-
 class _GemmaToolFix:
-    """Thin wrapper: patches tool_calls onto AIMessages when vLLM returns raw tags."""
-
     def __init__(self, model):
         self._model = model
 
@@ -129,22 +79,21 @@ class _GemmaToolFix:
             if parsed:
                 logger.info(f"🛠️ [GemmaFix] Converted {len(parsed)} tag-based tool call(s) to structured format.")
                 res.tool_calls = parsed
-                res.content = ""  # Clear text so agent doesn't treat it as a final answer
+                res.content = ""
         return res
 
     def __getattr__(self, name):
         return getattr(self._model, name)
 
-
-# ── DemoAgent ──────────────────────────────────────────────────────────────────
-
 class DemoAgent:
-    """
-    Agentic RAG orchestrator that connects to the FastMCP server for tools
-    and the system prompt.
-    """
-
     def __init__(self):
+        try:
+            if get_llm_cache() is None:
+                set_llm_cache(RedisCache(redis_url=settings.REDIS_URL))
+                logger.info(f"✅ LLM Cache initialized at {settings.REDIS_URL}")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize LLM Cache: {e}")
+
         self.model = _GemmaToolFix(ChatOpenAI(
             model=settings.LLM_MODEL,
             temperature=0,
@@ -153,24 +102,13 @@ class DemoAgent:
             timeout=60,
             max_retries=2,
         ))
-        self.memory = MongoDBSaver(mongo_db.client)
-
-        # Populated by connect_mcp()
+        self.memory = MongoDBSaver(mongo_db.client, db_name="checkpointing_db")
         self._mcp_client: MultiServerMCPClient | None = None
         self.agent = None
         self.system_prompt: str = ""
 
-    # ── MCP lifecycle ──────────────────────────────────────────────────────────
-
     async def connect_mcp(self) -> None:
-        """
-        Open a persistent connection to the FastMCP server, discover tools,
-        fetch the system prompt, and build the LangGraph agent.
-
-        Called once from FastAPI's lifespan startup hook.
-        """
         logger.info(f"🔌 Connecting to MCP server at {settings.MCP_SERVER_URL} …")
-
         self._mcp_client = MultiServerMCPClient(
             {
                 "rag_tools": {
@@ -180,10 +118,6 @@ class DemoAgent:
             }
         )
 
-        # 1. Discover tools exposed by the MCP server
-        # In langchain-mcp-adapters >= 0.1.0, get_tools() is async and handles connection
-        # We wrap this in a retry loop because mcp-server needs time to load heavy models into VRAM
-        
         max_retries = 60
         for i in range(max_retries):
             try:
@@ -192,60 +126,36 @@ class DemoAgent:
                 break
             except Exception as e:
                 if i == max_retries - 1:
-                    logger.error(f"❌ Failed to connect to MCP server after {max_retries} attempts.")
+                    logger.error(f"❌ Failed to connect to MCP server: {e}")
                     raise e
-                logger.info(f"⏳ Waiting for MCP server to start... (Attempt {i+1}/{max_retries}): {e}")
+                logger.info(f"⏳ Waiting for MCP server... (Attempt {i+1}/{max_retries})")
                 await asyncio.sleep(4)
 
-        # 2. Fetch the system prompt from the MCP server
-        # We need to use the session manager context or directly access it.
-        # Let's try directly accessing the session, but wait, if we need a context manager for the session...
-        # The error suggests: async with client.session("server_name") as session:
         async with self._mcp_client.session("rag_tools") as session:
             prompt_result = await session.get_prompt("rag_system_prompt")
         self.system_prompt = prompt_result.messages[0].content.text
-        logger.info("✅ System prompt fetched from MCP server.")
 
-        # 3. Build the LangGraph agent with the remote tools & prompt
         self.agent = create_agent(
             model=self.model,
             tools=tools,
             system_prompt=self.system_prompt,
             checkpointer=self.memory,
-            middleware=[
-                trim_messages,
-                HumanInTheLoopMiddleware(
-                    interrupt_on={
-                        "tavily_search": True,
-                    },
-                    description_prefix="Tool execution pending approval",
-                )
-            ],
         )
         logger.info("🚀 DemoAgent is ready.")
 
     async def disconnect_mcp(self) -> None:
-        """
-        Close the MCP connection gracefully.
-        Called from FastAPI's lifespan shutdown hook.
-        """
         if self._mcp_client is not None:
             self._mcp_client = None
             logger.info("🔌 MCP client disconnected.")
 
-    # ── Main interaction method ────────────────────────────────────────────────
-
     async def ask(self, query: str, thread_id: str = "1", topic: str = "General") -> dict:
-        """Main method to interact with the Agent."""
         if self.agent is None:
-            return {"response": "Agent not initialized. MCP connection may have failed.", "citations": []}
+            return {"response": "Agent not initialized.", "citations": []}
 
         config = {"configurable": {"thread_id": thread_id}}
-
         dynamic_topic_instruction = (
             f"CRITICAL: The user has selected the topic '{topic}'. "
-            f"You MUST pass '{topic}' to the `topic` argument when calling "
-            f"`search_document_knowledge`."
+            f"You MUST pass '{topic}' to the `topic` argument when calling `search_document_knowledge`."
         )
 
         try:
@@ -272,45 +182,10 @@ class DemoAgent:
                 return {"response": "No answer found.", "citations": []}
 
             final_message = messages[-1]
-
-            # ── Debug logging ──────────────────────────────────────────────────
-            logger.info("\n" + "=" * 80)
-            logger.info("🔍 DEBUG REASONING - FINAL MESSAGE")
-            logger.info(f"Type: {type(final_message).__name__}")
-            logger.info("\n--- Full final_message ---")
-            logger.info(final_message)
-            logger.info("\n--- .content ---")
-            logger.info(repr(final_message.content))
-            logger.info("\n--- .additional_kwargs ---")
-            logger.info(final_message.additional_kwargs)
-            reasoning = final_message.additional_kwargs.get("reasoning_content")
-            if reasoning:
-                logger.info(f"\n--- REASONING_CONTENT (len: {len(reasoning)}) ---")
-                logger.info(repr(reasoning[:1500] + "..." if len(reasoning) > 1500 else reasoning))
-            else:
-                logger.info("\n--- No reasoning_content ---")
-            logger.info("\n--- .response_metadata ---")
-            logger.info(final_message.response_metadata)
-            logger.info("=" * 80 + "\n")
-            # ──────────────────────────────────────────────────────────────────
-
             final_answer = ""
             if hasattr(final_message, "content") and final_message.content:
                 content = final_message.content
-                if isinstance(content, list):
-                    final_answer = "".join(
-                        block.get("text", "")
-                        for block in content
-                        if isinstance(block, dict)
-                    )
-                else:
-                    final_answer = content
-
-            logger.info("\n" + "=" * 60)
-            logger.info("🔍 FINAL MESSAGE TYPE: %s", type(final_message).__name__)
-            logger.info("🔍 FINAL MESSAGE CONTENT (RAW):")
-            logger.info(final_answer)
-            logger.info("=" * 60 + "\n")
+                final_answer = "".join(b.get("text", "") for b in content if isinstance(b, dict)) if isinstance(content, list) else content
 
             if isinstance(final_answer, str):
                 match = re.search(r"\{.*\}", final_answer, re.DOTALL)
@@ -318,26 +193,20 @@ class DemoAgent:
                     try:
                         return json.loads(match.group(0))
                     except json.JSONDecodeError:
-                        return {"response": final_answer, "citations": []}
+                        pass
                 return {"response": final_answer, "citations": []}
 
-            if isinstance(final_answer, dict):
-                return final_answer
-
-            return {"response": final_answer or "No answer.", "citations": []}
+            return final_answer if isinstance(final_answer, dict) else {"response": final_answer or "No answer.", "citations": []}
 
         except Exception as e:
-            logger.error(f"Agent execution error: {e}")
-            logger.error(traceback.format_exc()) # Show full error details in logs
+            logger.error(f"Agent execution error: {e}\n{traceback.format_exc()}")
             return {"response": f"An error occurred: {str(e)}", "citations": []}
 
     async def resume(self, thread_id: str, decision: str) -> dict:
-        """Resume agent after HITL approval decision."""
         if self.agent is None:
             return {"response": "Agent not initialized.", "citations": []}
 
         config = {"configurable": {"thread_id": thread_id}}
-
         try:
             final_state = await self.agent.ainvoke(
                 Command(resume={"decisions": [{"type": decision}]}),
@@ -360,14 +229,7 @@ class DemoAgent:
             final_answer = ""
             if hasattr(final_message, "content") and final_message.content:
                 content = final_message.content
-                if isinstance(content, list):
-                    final_answer = "".join(
-                        block.get("text", "")
-                        for block in content
-                        if isinstance(block, dict)
-                    )
-                else:
-                    final_answer = content
+                final_answer = "".join(b.get("text", "") for b in content if isinstance(b, dict)) if isinstance(content, list) else content
 
             if isinstance(final_answer, str):
                 match = re.search(r"\{.*\}", final_answer, re.DOTALL)
@@ -375,15 +237,66 @@ class DemoAgent:
                     try:
                         return json.loads(match.group(0))
                     except json.JSONDecodeError:
-                        return {"response": final_answer, "citations": []}
+                        pass
                 return {"response": final_answer, "citations": []}
 
-            if isinstance(final_answer, dict):
-                return final_answer
-
-            return {"response": final_answer or "No answer.", "citations": []}
+            return final_answer if isinstance(final_answer, dict) else {"response": final_answer or "No answer.", "citations": []}
 
         except Exception as e:
-            logger.error(f"Agent resume error: {e}")
-            logger.error(traceback.format_exc())
+            logger.error(f"Agent resume error: {e}\n{traceback.format_exc()}")
             return {"response": f"An error occurred: {str(e)}", "citations": []}
+
+    async def get_all_threads(self) -> list[dict]:
+        try:
+            db = mongo_db.client["checkpointing_db"]
+            pipeline = [
+                {"$sort": {"_id": -1}},
+                {"$group": {"_id": "$thread_id", "latest_id": {"$first": "$_id"}}},
+                {"$sort": {"latest_id": -1}},
+                {"$limit": 50}
+            ]
+            results = list(db["checkpoints"].aggregate(pipeline))
+            return [{"thread_id": res["_id"], "title": f"Conversation {res['_id'][:8]}"} for res in results if res["_id"] != "default_thread"]
+        except Exception as e:
+            logger.error(f"Error fetching threads: {e}")
+            return []
+
+    async def delete_thread(self, thread_id: str) -> bool:
+        try:
+            db = mongo_db.client["checkpointing_db"]
+            db["checkpoints"].delete_many({"thread_id": thread_id})
+            db["checkpoint_writes"].delete_many({"thread_id": thread_id})
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting thread {thread_id}: {e}")
+            return False
+
+    async def get_thread_messages(self, thread_id: str) -> list[dict]:
+        try:
+            state = self.agent.get_state({"configurable": {"thread_id": thread_id}})
+            messages = state.values.get("messages", []) if state.values else []
+            processed = []
+            for msg in messages:
+                if msg.type not in ("human", "ai"): continue
+                role = "user" if msg.type == "human" else "assistant"
+                content = msg.content
+                if role == "assistant":
+                    if not content or (hasattr(msg, "additional_kwargs") and msg.additional_kwargs.get("tool_calls")): continue
+                    if str(content).strip().upper().startswith(("CRITICAL:", "SEARCH RESULTS", "TOOL RESPONSE", "INTERNAL:", "THOUGHT:", "OBSERVATION:")): continue
+                
+                if isinstance(content, list):
+                    content = "".join(b.get("text", "") for b in content if isinstance(b, dict))
+                
+                citations = []
+                if role == "assistant" and isinstance(content, str) and "{" in content:
+                    match = re.search(r"\{.*\}", content, re.DOTALL)
+                    if match:
+                        try:
+                            data = json.loads(match.group(0))
+                            content, citations = data.get("response", content), data.get("citations", [])
+                        except: pass
+                processed.append({"role": role, "content": content, "citations": citations})
+            return processed
+        except Exception as e:
+            logger.error(f"Error fetching messages: {e}")
+            return []
