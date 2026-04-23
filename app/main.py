@@ -3,6 +3,9 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.api.routes import router, agent
+from langchain_core.globals import set_llm_cache
+from langchain_redis import RedisCache
+from app.core.config import settings
 
 
 # ── Global Logging Configuration ──────────────────────────────────────────────
@@ -18,6 +21,14 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # ── Startup ────────────────────────────────────────────────────────────────
     logger.info("🚀 Starting FastAPI server…")
+
+    # Initialize Redis Cache for LangChain
+    try:
+        redis_cache = RedisCache(redis_url=settings.REDIS_URL)
+        set_llm_cache(redis_cache)
+        logger.info(f"✅ Redis Cache initialized at {settings.REDIS_URL}")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize Redis Cache: {e}")
 
     # Open the MCP connection and build the agent graph.
     # This fetches tools + system prompt from the FastMCP server.

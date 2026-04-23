@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 class Settings:
     API_KEY = os.getenv("API_KEY")
+    REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
     LLM_MODEL = os.getenv("LLM_MODEL","qwen3.5:2b")
     BASE_URL = os.getenv("BASE_URL")
