@@ -1,10 +1,8 @@
 import asyncio
-import gc
 import json
 import logging
 import re
 import traceback
-import uuid
 from typing import Any
 
 from app.core.config import settings
@@ -19,6 +17,7 @@ from langchain_redis import RedisCache
 from langgraph.checkpoint.mongodb import MongoDBSaver
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.types import Command
+
 
 logger = logging.getLogger(__name__)
 
@@ -46,46 +45,6 @@ def trim_messages(state: AgentState, runtime: Any) -> dict | None:
         ]
     }
 
-def _parse_gemma_tool_calls(content: str) -> list[dict]:
-    calls = []
-    for m in re.finditer(
-        r'<\|tool_call\|?>call:([a-zA-Z_][a-zA-Z0-9_]*)\{(.*?)\}<\|?tool_call\|?>',
-        content, re.DOTALL,
-    ):
-        name, raw_args = m.group(1), m.group(2)
-        args = {
-            am.group(1): am.group(2)
-            for am in re.finditer(r'([a-zA-Z_][a-zA-Z0-9_]*):<\|"\|>(.*?)<\|"\|>', raw_args, re.DOTALL)
-        }
-        if name:
-            calls.append({"name": name, "args": args, "id": f"call_{uuid.uuid4().hex[:12]}"})
-    return calls
-
-class _GemmaToolFix:
-    def __init__(self, model):
-        self._model = model
-
-    def bind_tools(self, tools, **kwargs):
-        self._model = self._model.bind_tools(tools, **kwargs)
-        return self
-
-    async def ainvoke(self, input, config=None, **kwargs):
-        res = await self._model.ainvoke(input, config=config, **kwargs)
-        if (
-            not getattr(res, "tool_calls", None)
-            and hasattr(res, "content")
-            and isinstance(res.content, str)
-            and "<|tool_call" in res.content
-        ):
-            parsed = _parse_gemma_tool_calls(res.content)
-            if parsed:
-                logger.info(f"🛠️ [GemmaFix] Converted {len(parsed)} tag-based tool call(s) to structured format.")
-                res.tool_calls = parsed
-                res.content = ""
-        return res
-
-    def __getattr__(self, name):
-        return getattr(self._model, name)
 
 class DemoAgent:
     def __init__(self):
@@ -96,14 +55,15 @@ class DemoAgent:
         except Exception as e:
             logger.error(f"❌ Failed to initialize LLM Cache: {e}")
 
-        self.model = _GemmaToolFix(ChatOpenAI(
+        self.model = ChatOpenAI(
             model=settings.LLM_MODEL,
             temperature=0,
             base_url=settings.BASE_URL,
             api_key="none",
             timeout=60,
             max_retries=2,
-        ))
+        )
+
         self.memory = MongoDBSaver(mongo_db.client, db_name="checkpointing_db")
         self._mcp_client: MultiServerMCPClient | None = None
         self.agent = None
@@ -157,6 +117,71 @@ class DemoAgent:
             self._mcp_client = None
             logger.info("🔌 MCP client disconnected.")
 
+    async def _extract_response(self, messages: list) -> dict:
+        """Extract structured response from agent messages via JSON parsing."""
+        # Get raw text from the final AI message
+        final_message = messages[-1]
+        raw_text = ""
+        if hasattr(final_message, "content") and final_message.content:
+            content = final_message.content
+            if isinstance(content, list):
+                raw_text = "".join(b.get("text", "") for b in content if isinstance(b, dict))
+            else:
+                raw_text = content
+
+        if not raw_text:
+            return {"response": "No answer found.", "citations": []}
+
+        # Extract citations from tool responses
+        auto_citations = []
+        for m in reversed(messages[:-1]):
+            if getattr(m, "type", "") == "tool" and getattr(m, "name", "") == "search_document_knowledge":
+                # Tool returns text with METADATA: {"Header_1": "...", ...} lines
+                tool_text = m.content if isinstance(m.content, str) else str(m.content)
+                for meta_match in re.finditer(r'METADATA:\s*(\{.*?\})', tool_text):
+                    try:
+                        meta = json.loads(meta_match.group(1))
+                        if "file_url" in meta:
+                            auto_citations.append({
+                                "Header_1": meta.get("Header_1", "Source"),
+                                "Header_2": meta.get("Header_2", ""),
+                                "file_url": meta.get("file_url", ""),
+                            })
+                    except json.JSONDecodeError:
+                        pass
+                break
+
+        # 1. Try direct JSON parse (instant)
+        try:
+            parsed = json.loads(raw_text)
+            citations = parsed.get("citations")
+            if citations is None:
+                citations = auto_citations
+            return {
+                "response": str(parsed.get("response", raw_text)),
+                "citations": list(citations)
+            }
+        except json.JSONDecodeError:
+            pass
+
+        # 2. Try regex extraction — model sometimes wraps JSON in text (instant)
+        match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+        if match:
+            try:
+                parsed = json.loads(match.group(0))
+                citations = parsed.get("citations")
+                if citations is None:
+                    citations = auto_citations
+                return {
+                    "response": str(parsed.get("response", raw_text)),
+                    "citations": list(citations),
+                }
+            except json.JSONDecodeError:
+                pass
+
+        # 3. Model responded in natural language — use raw text + tool citations
+        return {"response": raw_text, "citations": auto_citations}
+
     async def ask(self, query: str, thread_id: str = "1", topic: str = "General") -> dict:
         if self.agent is None:
             return {"response": "Agent not initialized.", "citations": []}
@@ -182,30 +207,17 @@ class DemoAgent:
             if hasattr(final_state, "interrupts") and final_state.interrupts:
                 interrupt = final_state.interrupts[0].value
                 return {
+                    "response": "Approval required.",
+                    "citations": [],
                     "interrupt": True,
-                    "action_requests": interrupt.get("action_requests", [])
+                    "action_requests": interrupt.get("action_requests", []),
                 }
 
             messages = final_state.value.get("messages", []) if hasattr(final_state, "value") else final_state.get("messages", [])
             if not messages:
                 return {"response": "No answer found.", "citations": []}
 
-            final_message = messages[-1]
-            final_answer = ""
-            if hasattr(final_message, "content") and final_message.content:
-                content = final_message.content
-                final_answer = "".join(b.get("text", "") for b in content if isinstance(b, dict)) if isinstance(content, list) else content
-
-            if isinstance(final_answer, str):
-                match = re.search(r"\{.*\}", final_answer, re.DOTALL)
-                if match:
-                    try:
-                        return json.loads(match.group(0))
-                    except json.JSONDecodeError:
-                        pass
-                return {"response": final_answer, "citations": []}
-
-            return final_answer if isinstance(final_answer, dict) else {"response": final_answer or "No answer.", "citations": []}
+            return await self._extract_response(messages)
 
         except Exception as e:
             logger.error(f"Agent execution error: {e}\n{traceback.format_exc()}")
@@ -226,30 +238,17 @@ class DemoAgent:
             if hasattr(final_state, "interrupts") and final_state.interrupts:
                 interrupt = final_state.interrupts[0].value
                 return {
+                    "response": "Approval required.",
+                    "citations": [],
                     "interrupt": True,
-                    "action_requests": interrupt.get("action_requests", [])
+                    "action_requests": interrupt.get("action_requests", []),
                 }
 
             messages = final_state.value.get("messages", []) if hasattr(final_state, "value") else final_state.get("messages", [])
             if not messages:
                 return {"response": "No answer found.", "citations": []}
 
-            final_message = messages[-1]
-            final_answer = ""
-            if hasattr(final_message, "content") and final_message.content:
-                content = final_message.content
-                final_answer = "".join(b.get("text", "") for b in content if isinstance(b, dict)) if isinstance(content, list) else content
-
-            if isinstance(final_answer, str):
-                match = re.search(r"\{.*\}", final_answer, re.DOTALL)
-                if match:
-                    try:
-                        return json.loads(match.group(0))
-                    except json.JSONDecodeError:
-                        pass
-                return {"response": final_answer, "citations": []}
-
-            return final_answer if isinstance(final_answer, dict) else {"response": final_answer or "No answer.", "citations": []}
+            return await self._extract_response(messages)
 
         except Exception as e:
             logger.error(f"Agent resume error: {e}\n{traceback.format_exc()}")
@@ -296,14 +295,15 @@ class DemoAgent:
                 if isinstance(content, list):
                     content = "".join(b.get("text", "") for b in content if isinstance(b, dict))
                 
+                # Try to parse JSON from older messages that used the JSON format
                 citations = []
                 if role == "assistant" and isinstance(content, str) and "{" in content:
-                    match = re.search(r"\{.*\}", content, re.DOTALL)
-                    if match:
-                        try:
-                            data = json.loads(match.group(0))
-                            content, citations = data.get("response", content), data.get("citations", [])
-                        except: pass
+                    try:
+                        data = json.loads(content)
+                        content = data.get("response", content)
+                        citations = data.get("citations", [])
+                    except Exception:
+                        pass
                 processed.append({"role": role, "content": content, "citations": citations})
             return processed
         except Exception as e:
