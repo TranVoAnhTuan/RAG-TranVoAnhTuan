@@ -13,6 +13,7 @@ from langchain.agents import create_agent, AgentState
 from langchain.messages import RemoveMessage
 from langchain_core.globals import set_llm_cache, get_llm_cache
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain.agents.middleware import before_model, HumanInTheLoopMiddleware
 from langchain_openai import ChatOpenAI
 from langchain_redis import RedisCache
 from langgraph.checkpoint.mongodb import MongoDBSaver
@@ -21,6 +22,7 @@ from langgraph.types import Command
 
 logger = logging.getLogger(__name__)
 
+@before_model
 def trim_messages(state: AgentState, runtime: Any) -> dict | None:
     messages = state["messages"]
     if len(messages) <= 12:
@@ -140,6 +142,13 @@ class DemoAgent:
             tools=tools,
             system_prompt=self.system_prompt,
             checkpointer=self.memory,
+            middleware=[
+                trim_messages,
+                HumanInTheLoopMiddleware(
+                    interrupt_on={"tavily_search": True},
+                    description_prefix="Tool execution pending approval",
+                )
+            ],
         )
         logger.info("🚀 DemoAgent is ready.")
 

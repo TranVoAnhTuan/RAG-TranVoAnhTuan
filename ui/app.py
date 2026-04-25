@@ -166,18 +166,18 @@ def inject_css():
 		font-size: 0.8rem !important; font-family: 'Inter', sans-serif !important;
 	}
 	[data-testid="stFileUploadDropzone"] {
-		background: rgba(99,102,241,0.04) !important;
-		border: 1px dashed rgba(99,102,241,0.25) !important; border-radius: 10px !important;
+		background: rgba(99, 102, 241, 0.04) !important;
+		border: 1px dashed rgba(99, 102, 241, 0.25) !important; border-radius: 10px !important;
 	}
-	hr { border-color: rgba(99,102,241,0.12) !important; }
+	hr { border-color: rgba(99, 102, 241, 0.12) !important; }
 	.stSpinner > div { border-top-color: #6366f1 !important; }
 	#MainMenu, footer { visibility: hidden; }
 	[data-testid="stChatMessage"] > div:first-child { display: none; }
 	[data-testid="stChatMessage"] { background: transparent !important; border: none !important; padding: 0 !important; }
 	::-webkit-scrollbar { width: 5px; }
 	::-webkit-scrollbar-track { background: transparent; }
-	::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.3); border-radius: 10px; }
-	::-webkit-scrollbar-thumb:hover { background: rgba(99,102,241,0.5); }
+	::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.3); border-radius: 10px; }
+	::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.5); }
 	</style>
 	""", unsafe_allow_html=True)
 
@@ -261,6 +261,23 @@ def render_sidebar():
 
 		st.markdown(f"<div style='margin-top:auto;padding-top:1rem;font-size:0.68rem;color:#334155;display:flex;align-items:center;gap:6px;'><span style='width:7px;height:7px;background:#22c55e;border-radius:50%;display:inline-block;'></span>Thread: {st.session_state.thread_id[:8]}…</div>", unsafe_allow_html=True)
 
+def resume_agent(decision):
+	st.session_state.pending_interrupt = None
+	with st.spinner("Resuming..."):
+		try:
+			res = requests.post(f"{API_URL}/chat/resume", json={"thread_id": st.session_state.thread_id, "decision": decision}, timeout=300)
+			if res.status_code == 200:
+				raw = res.json().get("answer", {})
+				if isinstance(raw, dict) and raw.get("interrupt"):
+					st.session_state.pending_interrupt = raw.get("action_requests", [])
+				else:
+					answer = raw.get("response", "No answer.") if isinstance(raw, dict) else str(raw)
+					citations = raw.get("citations", []) if isinstance(raw, dict) else []
+					st.session_state.messages.append({"role": "assistant", "content": answer, "citations": citations})
+				st.rerun()
+		except requests.exceptions.RequestException:
+			st.error("Failed to resume.")
+
 def render_chat():
 	active = st.session_state.active_topic
 	if not st.session_state.messages:
@@ -285,15 +302,52 @@ def render_chat():
 							st.markdown(f"<div class='citation-card'><div class='citation-h1'>{i}. {cite.get('Header_1', 'Unknown')}</div><div class='citation-h2'>{cite.get('Header_2', '')}</div><a class='citation-link' href='{cite.get('file_url', '')}' target='_blank'>🔗 View source PDF</a></div>", unsafe_allow_html=True)
 
 	if st.session_state.pending_interrupt:
-		st.warning("Please approve or reject the pending action below.")
+		st.markdown("### ⚠️ Agent requires your approval")
+		for req in st.session_state.pending_interrupt:
+			st.info(f"**Tool:** {req.get('name')}\n\n**Arguments:** {req.get('arguments')}")
+		c1, c2 = st.columns(2)
+		with c1:
+			if st.button("✅ Approve", use_container_width=True, type="primary"): resume_agent("approve")
+		with c2:
+			if st.button("❌ Reject", use_container_width=True): resume_agent("reject")
 		prompt = None
 	else:
-		with bottom(): prompt = st.chat_input(f"Ask about '{active}'…") or st.session_state.trigger_send
+		with bottom():
+			prompt = st.chat_input(f"Ask about '{active}'…") or st.session_state.trigger_send
 
 	if prompt:
 		st.session_state.trigger_send = None
 		st.session_state.messages.append({"role": "user", "content": prompt})
-		st.rerun()
+		with st.chat_message("user"):
+			st.markdown(f"<div class='user-row'><div class='user-bubble'>{prompt}</div></div>", unsafe_allow_html=True)
+
+		with st.chat_message("assistant"):
+			with st.spinner("Searching knowledge base…"):
+				try:
+					res = requests.post(
+						f"{API_URL}/chat",
+						json={"query": prompt, "thread_id": st.session_state.thread_id, "topic": active},
+						timeout=300,
+					)
+					if res.status_code == 200:
+						raw = res.json().get("answer", {})
+						if isinstance(raw, dict) and raw.get("interrupt"):
+							st.session_state.pending_interrupt = raw.get("action_requests", [])
+							st.rerun()
+						
+						answer = raw.get("response", "No answer.") if isinstance(raw, dict) else str(raw)
+						citations = raw.get("citations", []) if isinstance(raw, dict) else []
+						
+						st.markdown(f"<div class='assistant-row'><div class='assistant-avatar'>⚡</div><div class='assistant-content'>{answer}</div></div>", unsafe_allow_html=True)
+						if citations:
+							with st.expander(f"📚 {len(citations)} Source(s)"):
+								for i, cite in enumerate(citations, 1):
+									st.markdown(f"<div class='citation-card'><div class='citation-h1'>{i}. {cite.get('Header_1', 'Unknown')}</div><div class='citation-h2'>{cite.get('Header_2', '')}</div><a class='citation-link' href='{cite.get('file_url', '')}' target='_blank'>🔗 View source PDF</a></div>", unsafe_allow_html=True)
+						
+						st.session_state.messages.append({"role": "assistant", "content": answer, "citations": citations})
+					else: st.error(f"Backend error {res.status_code}")
+				except requests.exceptions.RequestException:
+					st.error("Cannot connect to backend.")
 
 @st.dialog("Conversation History")
 def show_history_dialog():
