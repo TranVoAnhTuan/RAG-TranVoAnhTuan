@@ -14,6 +14,7 @@ from fastmcp import FastMCP
 
 from mcp_server.tools.rag_tool import register_tools
 from mcp_server.tools.tavily_tool import register_tavily_tool
+from mcp_server.tools.final_answer_tool import register_tools as register_final_answer_tool
 from mcp_server.prompts.system_prompt import register_prompt
 
 # ── Global Logging Configuration ──────────────────────────────────────────────
@@ -37,6 +38,7 @@ mcp = FastMCP(
 # ── Register tools and prompts ─────────────────────────────────────────────────
 register_tools(mcp)
 register_tavily_tool(mcp)
+register_final_answer_tool(mcp)
 register_prompt(mcp)
 
 

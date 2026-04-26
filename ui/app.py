@@ -148,6 +148,13 @@ def inject_css():
 		display: inline-flex; align-items: center; gap: 4px; margin-top: 4px;
 	}
 	.citation-link:hover { color: #c7d2fe; }
+	.tool-call-card {
+		background: rgba(34,197,94,0.06); border: 1px solid rgba(34,197,94,0.18);
+		border-radius: 8px; padding: 0.5rem 0.8rem; margin-bottom: 0.4rem;
+		font-size: 0.75rem; line-height: 1.5;
+	}
+	.tool-call-name { color: #4ade80; font-weight: 600; font-family: 'Inter', monospace; }
+	.tool-call-args { color: #64748b; margin-top: 2px; word-break: break-all; font-size: 0.7rem; }
 	details > summary { font-size: 0.75rem !important; font-weight: 600 !important; color: #64748b !important; }
 	[data-testid="stExpander"] { background: transparent !important; border: none !important; }
 	[data-testid="stChatInput"] {
@@ -296,6 +303,11 @@ def render_chat():
 				st.markdown(f"<div class='user-row'><div class='user-bubble'>{msg['content']}</div></div>", unsafe_allow_html=True)
 			else:
 				st.markdown(f"<div class='assistant-row'><div class='assistant-avatar'>⚡</div><div class='assistant-content'>{msg['content']}</div></div>", unsafe_allow_html=True)
+				if msg.get("tools_used"):
+					with st.expander(f"🔧 {len(msg['tools_used'])} Tool(s) Called"):
+						for t in msg["tools_used"]:
+							args_str = ', '.join(f'{k}={v}' for k, v in t.get('args', {}).items())
+							st.markdown(f"<div class='tool-call-card'><div class='tool-call-name'>⚙️ {t['name']}</div><div class='tool-call-args'>{args_str}</div></div>", unsafe_allow_html=True)
 				if msg.get("citations"):
 					with st.expander(f"📚 {len(msg['citations'])} Source(s)"):
 						for i, cite in enumerate(msg["citations"], 1):
@@ -337,14 +349,21 @@ def render_chat():
 						
 						answer = raw.get("response", "No answer.") if isinstance(raw, dict) else str(raw)
 						citations = raw.get("citations", []) if isinstance(raw, dict) else []
+						tools_used = raw.get("tools_used", []) if isinstance(raw, dict) else []
 						
 						st.markdown(f"<div class='assistant-row'><div class='assistant-avatar'>⚡</div><div class='assistant-content'>{answer}</div></div>", unsafe_allow_html=True)
+						if tools_used:
+							with st.expander(f"🔧 {len(tools_used)} Tool(s) Called"):
+								for t in tools_used:
+									args_str = ', '.join(f'{k}={v}' for k, v in t.get('args', {}).items())
+									st.markdown(f"<div class='tool-call-card'><div class='tool-call-name'>⚙️ {t['name']}</div><div class='tool-call-args'>{args_str}</div></div>", unsafe_allow_html=True)
 						if citations:
 							with st.expander(f"📚 {len(citations)} Source(s)"):
 								for i, cite in enumerate(citations, 1):
 									st.markdown(f"<div class='citation-card'><div class='citation-h1'>{i}. {cite.get('Header_1', 'Unknown')}</div><div class='citation-h2'>{cite.get('Header_2', '')}</div><a class='citation-link' href='{cite.get('file_url', '')}' target='_blank'>🔗 View source PDF</a></div>", unsafe_allow_html=True)
 						
-						st.session_state.messages.append({"role": "assistant", "content": answer, "citations": citations})
+						st.session_state.messages.append({"role": "assistant", "content": answer, "citations": citations, "tools_used": tools_used})
+						st.rerun()
 					else: st.error(f"Backend error {res.status_code}")
 				except requests.exceptions.RequestException:
 					st.error("Cannot connect to backend.")

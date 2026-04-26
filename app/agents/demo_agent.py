@@ -62,7 +62,7 @@ class DemoAgent:
             api_key="none",
             timeout=60,
             max_retries=2,
-        )
+        ).bind(parallel_tool_calls=False)
 
         self.memory = MongoDBSaver(mongo_db.client, db_name="checkpointing_db")
         self._mcp_client: MultiServerMCPClient | None = None
@@ -119,24 +119,54 @@ class DemoAgent:
 
     async def _extract_response(self, messages: list) -> dict:
         """Extract structured response from agent messages via JSON parsing."""
-        # Get raw text from the final AI message
-        final_message = messages[-1]
+        # Scope to current turn only: find the last human message and slice after it
+        last_human_idx = -1
+        for i, m in enumerate(messages):
+            if getattr(m, "type", "") == "human":
+                last_human_idx = i
+        turn_messages = messages[last_human_idx + 1:] if last_human_idx >= 0 else messages
+
+        # Collect tool calls made during this turn
+        tools_used = []
+        for m in turn_messages:
+            if getattr(m, "type", "") == "ai" and getattr(m, "tool_calls", None):
+                for tc in m.tool_calls:
+                    name = tc.get("name", "")
+                    if name == "submit_final_answer":
+                        continue
+                    tools_used.append({"name": name, "args": tc.get("args", {})})
+
+        # 1. Primary approach: Intercept submit_final_answer tool call
+        for m in reversed(turn_messages):
+            if getattr(m, "type", "") == "ai" and getattr(m, "tool_calls", None):
+                for tc in m.tool_calls:
+                    if tc.get("name") == "submit_final_answer":
+                        args = tc.get("args", {})
+                        return {
+                            "response": str(args.get("response", "No answer found.")),
+                            "citations": list(args.get("citations", [])),
+                            "tools_used": tools_used,
+                        }
+
+        # Get raw text from the final AI message (Emergency Fallback)
         raw_text = ""
-        if hasattr(final_message, "content") and final_message.content:
-            content = final_message.content
+        for m in reversed(turn_messages):
+            if getattr(m, "type", "") != "ai":
+                continue
+            content = getattr(m, "content", "")
             if isinstance(content, list):
-                raw_text = "".join(b.get("text", "") for b in content if isinstance(b, dict))
-            else:
+                content = "".join(b.get("text", "") for b in content if isinstance(b, dict))
+            if content and content.strip():
                 raw_text = content
+                break
 
         if not raw_text:
-            return {"response": "No answer found.", "citations": []}
+            return {"response": "No answer found.", "citations": [], "tools_used": tools_used}
 
         # Extract citations from tool responses
         auto_citations = []
-        for m in reversed(messages[:-1]):
+        for m in reversed(turn_messages):
             if getattr(m, "type", "") == "tool" and getattr(m, "name", "") == "search_document_knowledge":
-                # Tool returns text with METADATA: {"Header_1": "...", ...} lines
                 tool_text = m.content if isinstance(m.content, str) else str(m.content)
                 for meta_match in re.finditer(r'METADATA:\s*(\{.*?\})', tool_text):
                     try:
@@ -159,7 +189,8 @@ class DemoAgent:
                 citations = auto_citations
             return {
                 "response": str(parsed.get("response", raw_text)),
-                "citations": list(citations)
+                "citations": list(citations),
+                "tools_used": tools_used,
             }
         except json.JSONDecodeError:
             pass
@@ -175,12 +206,13 @@ class DemoAgent:
                 return {
                     "response": str(parsed.get("response", raw_text)),
                     "citations": list(citations),
+                    "tools_used": tools_used,
                 }
             except json.JSONDecodeError:
                 pass
 
         # 3. Model responded in natural language — use raw text + tool citations
-        return {"response": raw_text, "citations": auto_citations}
+        return {"response": raw_text, "citations": auto_citations, "tools_used": tools_used}
 
     async def ask(self, query: str, thread_id: str = "1", topic: str = "General") -> dict:
         if self.agent is None:
@@ -193,15 +225,18 @@ class DemoAgent:
         )
 
         try:
-            final_state = await self.agent.ainvoke(
-                {
-                    "messages": [
-                        {"role": "system", "content": dynamic_topic_instruction},
-                        {"role": "human", "content": query},
-                    ],
-                },
-                config=config,
-                version="v2",
+            final_state = await asyncio.wait_for(
+                self.agent.ainvoke(
+                    {
+                        "messages": [
+                            {"role": "system", "content": dynamic_topic_instruction},
+                            {"role": "human", "content": query},
+                        ],
+                    },
+                    config=config,
+                    version="v2",
+                ),
+                timeout=120,
             )
 
             if hasattr(final_state, "interrupts") and final_state.interrupts:
@@ -219,6 +254,9 @@ class DemoAgent:
 
             return await self._extract_response(messages)
 
+        except asyncio.TimeoutError:
+            logger.error("Agent execution timed out after 120s")
+            return {"response": "Request timed out. Please try a simpler question.", "citations": []}
         except Exception as e:
             logger.error(f"Agent execution error: {e}\n{traceback.format_exc()}")
             return {"response": f"An error occurred: {str(e)}", "citations": []}
@@ -229,10 +267,13 @@ class DemoAgent:
 
         config = {"configurable": {"thread_id": thread_id}}
         try:
-            final_state = await self.agent.ainvoke(
-                Command(resume={"decisions": [{"type": decision}]}),
-                config=config,
-                version="v2",
+            final_state = await asyncio.wait_for(
+                self.agent.ainvoke(
+                    Command(resume={"decisions": [{"type": decision}]}),
+                    config=config,
+                    version="v2",
+                ),
+                timeout=120,
             )
 
             if hasattr(final_state, "interrupts") and final_state.interrupts:
@@ -250,6 +291,9 @@ class DemoAgent:
 
             return await self._extract_response(messages)
 
+        except asyncio.TimeoutError:
+            logger.error("Agent resume timed out after 120s")
+            return {"response": "Request timed out. Please try a simpler question.", "citations": []}
         except Exception as e:
             logger.error(f"Agent resume error: {e}\n{traceback.format_exc()}")
             return {"response": f"An error occurred: {str(e)}", "citations": []}
