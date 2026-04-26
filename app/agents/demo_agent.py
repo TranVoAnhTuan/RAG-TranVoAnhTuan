@@ -9,11 +9,11 @@ from app.core.config import settings
 from app.db.mongo_db import mongo_db
 from langchain.agents import create_agent, AgentState
 from langchain.messages import RemoveMessage
-from langchain_core.globals import set_llm_cache, get_llm_cache
+import hashlib
+import redis.asyncio as redis
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain.agents.middleware import before_model, HumanInTheLoopMiddleware
 from langchain_openai import ChatOpenAI
-from langchain_redis import RedisCache
 from langgraph.checkpoint.mongodb import MongoDBSaver
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.types import Command
@@ -49,11 +49,11 @@ def trim_messages(state: AgentState, runtime: Any) -> dict | None:
 class DemoAgent:
     def __init__(self):
         try:
-            if get_llm_cache() is None:
-                set_llm_cache(RedisCache(redis_url=settings.REDIS_URL))
-                logger.info(f"✅ LLM Cache initialized at {settings.REDIS_URL}")
+            self.app_cache = redis.from_url(settings.REDIS_URL, decode_responses=True)
+            logger.info(f"✅ App Cache initialized at {settings.REDIS_URL}")
         except Exception as e:
-            logger.error(f"❌ Failed to initialize LLM Cache: {e}")
+            logger.error(f"❌ Failed to initialize App Cache: {e}")
+            self.app_cache = None
 
         self.model = ChatOpenAI(
             model=settings.LLM_MODEL,
@@ -218,6 +218,21 @@ class DemoAgent:
         if self.agent is None:
             return {"response": "Agent not initialized.", "citations": []}
 
+        # ── APPLICATION-LEVEL CACHING ────────────────────────────────────────────────
+        cache_key = None
+        if self.app_cache is not None:
+            normalized_query = query.strip().lower()
+            hash_str = hashlib.md5(f"{topic}:{normalized_query}".encode("utf-8")).hexdigest()
+            cache_key = f"app_cache:{hash_str}"
+            try:
+                cached_res = await self.app_cache.get(cache_key)
+                if cached_res:
+                    logger.info("⚡ Application Cache HIT! Returning instantly.")
+                    return json.loads(cached_res)
+            except Exception as e:
+                logger.error(f"App Cache read error: {e}")
+        # ─────────────────────────────────────────────────────────────────────────────
+
         config = {"configurable": {"thread_id": thread_id}}
         dynamic_topic_instruction = (
             f"CRITICAL: The user has selected the topic '{topic}'. "
@@ -252,7 +267,17 @@ class DemoAgent:
             if not messages:
                 return {"response": "No answer found.", "citations": []}
 
-            return await self._extract_response(messages)
+            answer_dict = await self._extract_response(messages)
+            
+            # Save to App Cache if we got a real response
+            if self.app_cache is not None and cache_key is not None:
+                try:
+                    ttl = getattr(settings, "CACHE_TTL_SECONDS", 86400)
+                    await self.app_cache.setex(cache_key, ttl, json.dumps(answer_dict))
+                except Exception as e:
+                    logger.error(f"App Cache write error: {e}")
+                    
+            return answer_dict
 
         except asyncio.TimeoutError:
             logger.error("Agent execution timed out after 120s")

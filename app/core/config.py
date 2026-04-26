@@ -52,4 +52,6 @@ class Settings:
     else:
         AVAILABLE_TOPICS = _default_topics
 
+    CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", 86400))
+
 settings = Settings()
