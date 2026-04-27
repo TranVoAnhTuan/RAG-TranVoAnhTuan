@@ -3,10 +3,8 @@
 Singleton pattern: use the module-level ``settings`` instance.
 """
 
-import json
 import logging
 import os
-from typing import ClassVar
 
 from dotenv import load_dotenv
 
@@ -58,22 +56,7 @@ class Settings:
     CONTEXT_LENGTH: int = int(os.getenv("CONTEXT_LENGTH", 8000))
     RERANKER_MODEL_NAME: str = os.getenv("RERANKER_MODEL_NAME", "jinaai/jina-reranker-v3")
 
-    # ── Topics ──────────────────────────────────────────────────────
-    _default_topics: ClassVar[dict[str, str]] = {
-        "Insurance": "Includes regulations, policies, company information, and guidelines related to the insurance industry.",
-        "QNU": "Information related to Quy Nhon University (QNU), including university regulations, academics, admissions, and campus rules.",
-        "General": "General topics or documents that do not strictly fit into Insurance or QNU categories.",
-    }
 
-    _topics_env = os.getenv("AVAILABLE_TOPICS_JSON")
-    if _topics_env:
-        try:
-            AVAILABLE_TOPICS: ClassVar[dict[str, str]] = json.loads(_topics_env)
-        except json.JSONDecodeError:
-            logger.warning("⚠️ Failed to parse AVAILABLE_TOPICS_JSON from .env, using default topics.")
-            AVAILABLE_TOPICS = _default_topics
-    else:
-        AVAILABLE_TOPICS = _default_topics
 
     # ── Cache ───────────────────────────────────────────────────────
     CACHE_TTL_SECONDS: int = int(os.getenv("CACHE_TTL_SECONDS", 86400))
