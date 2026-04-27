@@ -6,7 +6,7 @@ import os
 import torch
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 
 from .state import IngestionState
@@ -27,6 +27,7 @@ def _process_with_docling(file_path: str) -> str:
     pipeline_options = PdfPipelineOptions()
     pipeline_options.do_ocr = True
     pipeline_options.do_table_structure = False
+    pipeline_options.ocr_options = EasyOcrOptions(lang=["vi", "en"])
     pipeline_options.accelerator_options = AcceleratorOptions(num_threads=6, device="cuda")
 
     converter = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
@@ -34,7 +35,8 @@ def _process_with_docling(file_path: str) -> str:
     markdown_text = result.document.export_to_markdown()
 
     logger.info("Cleaning Docling RAM...")
-    del converter, result
+    del converter, result, pipeline_options
+    gc.collect()
     gc.collect()
 
     if torch.cuda.is_available():
