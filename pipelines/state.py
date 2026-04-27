@@ -7,7 +7,6 @@ class IngestionState(TypedDict):
     raw_text: str
     cleaned_text: str
     chunks: list[dict]
-    tables: list[dict]
     status: str
     file_hash: str | None
     is_duplicate: bool | None

@@ -3,7 +3,6 @@ import gc
 import logging
 import os
 
-import pandas as pd
 import torch
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
@@ -23,32 +22,19 @@ def log_vram(step_name: str) -> None:
         logger.info(f"📊 [{step_name}] VRAM Allocated: {allocated:.2f} MB | Reserved: {reserved:.2f} MB")
 
 
-def _process_with_docling(file_path: str) -> dict[str, list]:
+def _process_with_docling(file_path: str) -> str:
     logger.info("Loading Docling...")
     pipeline_options = PdfPipelineOptions()
     pipeline_options.do_ocr = True
-    pipeline_options.do_table_structure = True
+    pipeline_options.do_table_structure = False
     pipeline_options.accelerator_options = AcceleratorOptions(num_threads=6, device="cuda")
 
     converter = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
     result = converter.convert(file_path)
-    doc = result.document
-
-    tables_data = []
-    if hasattr(doc, "tables"):
-        for i, table in enumerate(doc.tables, 1):
-            try:
-                df = table.export_to_dataframe()
-                df = df.replace(r"^[-|\s]*$", pd.NA, regex=True).dropna(how="all", axis=0).fillna("")
-                if not df.empty:
-                    tables_data.append({"table_number": i, "data": df.to_dict(orient="records")})
-            except Exception as e:
-                logger.error(f"Table error {i}: {e}")
-
-    markdown_text = doc.export_to_markdown()
+    markdown_text = result.document.export_to_markdown()
 
     logger.info("Cleaning Docling RAM...")
-    del converter, result, doc
+    del converter, result
     gc.collect()
 
     if torch.cuda.is_available():
@@ -56,7 +42,7 @@ def _process_with_docling(file_path: str) -> dict[str, list]:
         torch.cuda.ipc_collect()
 
     log_vram("4. AFTER CLEANUP")
-    return {"markdown": markdown_text, "tables": tables_data}
+    return markdown_text
 
 
 async def extract_node(state: IngestionState) -> dict:
@@ -64,6 +50,6 @@ async def extract_node(state: IngestionState) -> dict:
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"No file found at: {file_path}")
 
-    docling_result = await asyncio.to_thread(_process_with_docling, file_path)
+    markdown = await asyncio.to_thread(_process_with_docling, file_path)
 
-    return {"raw_text": docling_result["markdown"], "tables": docling_result["tables"]}
+    return {"raw_text": markdown}
