@@ -2,7 +2,7 @@ import json
 
 path = "/home/jacktran/RAG/experiment/rag_agentic_system/evaluation/testset_updated.json"
 
-with open(path, "r", encoding="utf-8") as f:
+with open(path, encoding="utf-8") as f:
     data = json.load(f)
 
 for i, item in enumerate(data):

@@ -77,3 +77,10 @@ optional = true
 streamlit = "^1.55.0"
 streamlit-extras = "^0.7.8"
 requests = "*"
+
+# ── Dev tools ─────────────────────────────────────────────────────────────────
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.11"

@@ -1,13 +1,20 @@
+"""MongoDB client for the FastAPI backend.
+
+Singleton pattern: use the module-level ``mongo_db`` instance.
+"""
+
 from pymongo import MongoClient
-import gridfs
+
 from app.core.config import settings
 
+
 class MongoDB:
-    def __init__(self):
-        # Update your MongoDB URI here
-        self.client = MongoClient(settings.MONGODB_HOST) 
+    """Provides a shared MongoDB connection and default database/collection handles."""
+
+    def __init__(self) -> None:
+        self.client: MongoClient = MongoClient(settings.MONGODB_HOST)
         self.db = self.client["agentic_rag_database"]
-        self.fs = gridfs.GridFS(self.db)
         self.collection = self.db["documents_metadata"]
+
 
 mongo_db = MongoDB()

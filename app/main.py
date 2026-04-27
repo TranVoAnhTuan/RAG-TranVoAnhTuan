@@ -1,11 +1,10 @@
 import gc
 import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
-from langchain_core.globals import set_llm_cache
-from langchain_redis import RedisCache
-from app.core.config import settings
-from app.api.routes import router, agent
+
+from app.api.routes import agent, router
 
 # ── Global Logging Configuration ──────────────────────────────────────────────
 logging.basicConfig(
@@ -14,6 +13,7 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()],
 )
 logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,4 +44,5 @@ app.include_router(router, prefix="/api/v1")
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
