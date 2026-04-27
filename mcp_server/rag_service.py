@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from typing import Optional
 
 from qdrant_client import AsyncQdrantClient, models
 
@@ -8,6 +7,7 @@ from mcp_server.config import mcp_settings
 from mcp_server.model_manager import model_manager
 
 logger = logging.getLogger(__name__)
+
 
 class RAGService:
     """
@@ -19,34 +19,25 @@ class RAGService:
     on the FastAPI app package.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.client = AsyncQdrantClient(
             url=mcp_settings.QDRANT_URL,
             api_key=mcp_settings.QDRANT_API_KEY,
             timeout=120,
         )
-        self.collection_name = mcp_settings.QDRANT_COLLECTION_NAME
+        self.collection_name: str = mcp_settings.QDRANT_COLLECTION_NAME
         # Sparse model lives on CPU permanently
         self.sparse_model = model_manager.get_sparse_model()
 
-    async def retrieve_and_rerank(
-        self, query_text: str, filter_topic: Optional[str] = None
-    ) -> str:
-        """
-        Full retrieval pipeline:
-        1. Embed query (dense + sparse)
-        2. Hybrid search with RRF fusion
-        3. Context-window expansion (fetch sibling chunks by Header_1)
-        4. Rerank with Jina Reranker v3
-        5. Return top-5 formatted as structured text
-        """
+    async def retrieve_and_rerank(self, query_text: str, filter_topic: str | None = None) -> str:
+        """Full retrieval pipeline: embed → hybrid search → expand context → rerank → format."""
         loop = asyncio.get_event_loop()
 
         # ── 1. Embed ──────────────────────────────────────────────────
         def get_embeddings():
             with model_manager.use_dense_model_on_gpu() as dense_model:
                 dense = dense_model.encode(query_text).tolist()
-            sparse = list(self.sparse_model.embed([query_text]))[0]
+            sparse = next(iter(self.sparse_model.embed([query_text])))
             return dense, sparse
 
         dense_query, sparse_query = await loop.run_in_executor(None, get_embeddings)
@@ -95,9 +86,7 @@ class RAGService:
         # ── 4. Context-window expansion ───────────────────────────────
         merged_docs_dict = {doc.id: doc for doc in hybrid_results.points}
         processed_headers = {
-            doc.payload.get("Header_1")
-            for doc in hybrid_results.points
-            if doc.payload.get("Header_1")
+            doc.payload.get("Header_1") for doc in hybrid_results.points if doc.payload.get("Header_1")
         }
 
         for header in processed_headers:

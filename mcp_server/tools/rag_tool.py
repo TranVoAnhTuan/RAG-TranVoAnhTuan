@@ -1,8 +1,7 @@
-from typing import Optional
-
 from fastmcp import FastMCP
 
 from mcp_server.rag_service import rag_service
+
 
 def register_tools(mcp: FastMCP) -> None:
     """
@@ -24,9 +23,5 @@ def register_tools(mcp: FastMCP) -> None:
             "represent a completely different approach or a broader topic."
         ),
     )
-    async def search_document_knowledge(
-        query: str, topic: Optional[str] = None
-    ) -> str:
+    async def search_document_knowledge(query: str, topic: str | None = None) -> str:
         return await rag_service.retrieve_and_rerank(query, filter_topic=topic)
-
-

@@ -1,16 +1,19 @@
-from langgraph.graph import StateGraph, START, END
-from .state import IngestionState
-from .extract import extract_node
-from .clean import clean_node
-from .chunk import chunk_node
-from .embed import embed_and_load_node
+from langgraph.graph import END, START, StateGraph
+
 from .check_duplicate import check_duplicate_node
+from .chunk import chunk_node
+from .clean import clean_node
+from .embed import embed_and_load_node
+from .extract import extract_node
+from .state import IngestionState
+
 
 def route_after_check(state: IngestionState):
     """Conditional routing based on document duplication"""
     if state.get("is_duplicate", False):
         return END
     return "extract"
+
 
 def build_ingestion_graph():
     workflow = StateGraph(IngestionState)
@@ -22,12 +25,8 @@ def build_ingestion_graph():
     workflow.add_node("embed_and_load", embed_and_load_node)
 
     workflow.add_edge(START, "check_duplicate")
-    
-    workflow.add_conditional_edges(
-        "check_duplicate",
-        route_after_check,
-        {END: END, "extract": "extract"}
-    )
+
+    workflow.add_conditional_edges("check_duplicate", route_after_check, {END: END, "extract": "extract"})
 
     workflow.add_edge("extract", "clean")
     workflow.add_edge("clean", "chunk")
@@ -35,5 +34,6 @@ def build_ingestion_graph():
     workflow.add_edge("embed_and_load", END)
 
     return workflow.compile()
+
 
 ingestion_app = build_ingestion_graph()
