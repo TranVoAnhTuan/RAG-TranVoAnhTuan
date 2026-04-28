@@ -5,8 +5,8 @@ description = "Testing environment"
 
 [tool.poetry.dependencies]
 python = "~3.11"
-torch = "*"
-transformers = "^4.44.2"
+torch = "~2.5"
+transformers = ">=4.44.2,<4.57"
 ipykernel = "^7.2.0"
 pymongo = ">=4.12,<4.16"
 qdrant-client = "^1.17.0"
@@ -20,8 +20,6 @@ langchain-openai = "^1.1.11"
 streamlit = "^1.55.0"
 pandas = "^2.2"
 langchain-ollama = "^1.0.1"
-docling = "^2.81.0"
-onnxruntime-gpu = "^1.18.0"
 streamlit-extras = "^0.7.8"
 bitsandbytes = "^0.49.2"
 accelerate = "^1.13.0"
@@ -37,6 +35,7 @@ langsmith = "^0.7.22"
 python-dotenv = "*"
 langchain-redis = "^0.2.5"
 langchain-core = "^1.3.0"
+docling = "^2.91.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -60,8 +59,8 @@ qdrant-client = "^1.17.0"
 # Embedding & Reranking
 fastembed = "^0.7.4"
 flagembedding = "^1.3.5"
-transformers = "^4.44.2"
-torch = "*"
+transformers = ">=4.44.2,<4.57"
+torch = "~2.5"
 # Utilities
 python-dotenv = "*"
 huggingface-hub = "^0.34.0"
