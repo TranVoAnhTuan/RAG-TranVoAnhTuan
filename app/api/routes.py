@@ -54,7 +54,7 @@ async def upload_pdf(file: UploadFile = File(...), topic: str = Form("General"))
         initial_state = {"file_path": temp_file_path, "filename": file.filename, "topic": topic}
         final_state = await ingestion_app.ainvoke(initial_state)
 
-        return {"message": final_state["status"], "tables": final_state.get("tables", [])}
+        return {"message": final_state["status"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
     finally:
