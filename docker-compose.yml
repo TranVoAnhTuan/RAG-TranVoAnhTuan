@@ -1,0 +1,133 @@
+networks:
+  # Shared bridge network — all services resolve each other by service name.
+  rag-net:
+    driver: bridge
+
+services:
+
+  # ── 1. FastMCP Tools Server ──────────────────────────────────────────────────
+  # Owns: RAGService, ModelManager (Dense/Sparse/Reranker), SYSTEM_PROMPT
+  # Exposes: MCP Streamable HTTP endpoint at /mcp  (internal only, no host port)
+  mcp-server:
+    image: mcp_server:${APP_VERSION}
+    build:
+      context: .
+      dockerfile: mcp_server/Dockerfile
+    container_name: mcp-server-${APP_VERSION}
+    # No 'ports' — the MCP server is internal-only; only the backend talks to it.
+    networks:
+      - rag-net
+    env_file: .env
+    environment:
+      - SSL_CERT_FILE=/app/combined.pem
+      - REQUESTS_CA_BUNDLE=/app/combined.pem
+      - HUGGINGFACE_ACCESS_TOKEN=
+      - HF_TOKEN=
+      - SQLITE_DB_PATH=/app/data/rag_database.db
+    volumes:
+      - ./combined.pem:/app/combined.pem:ro
+      - ./data:/app/data
+      # Mount host HuggingFace cache so the container doesn't need to download models
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      # Mount host fastembed cache just in case
+      - ~/.local/share/fastembed:/root/.local/share/fastembed
+    restart: unless-stopped
+    # GPU access — required for Dense embedding + Jina Reranker inference
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+
+  # ── 2. FastAPI Backend (Agent Orchestrator / MCP Client) ─────────────────────
+  # Owns: DemoAgent (LangGraph), API routes, ingestion pipeline
+  # Talks to mcp-server for tool calls and system prompt over HTTP/SSE
+  backend:
+    image: backend:${APP_VERSION}
+    build:
+      context: .
+      dockerfile: Dockerfile # root-level Dockerfile for the FastAPI app
+    container_name: backend-${APP_VERSION}
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    networks:
+      - rag-net
+    env_file: .env
+    environment:
+      # Override to use the Docker service name instead of localhost
+      - MCP_SERVER_URL=http://mcp-server:8001/mcp
+      - MINIO_ENDPOINT=minio:9000
+      - SSL_CERT_FILE=/app/combined.pem
+      - REQUESTS_CA_BUNDLE=/app/combined.pem
+      - REDIS_URL=redis://redis:6379
+      - SQLITE_DB_PATH=/app/data/rag_database.db
+      # Allow connection to host's Ollama instance
+      # Use BASE_URL from .env
+    volumes:
+      - ./combined.pem:/app/combined.pem:ro
+      - ./data:/app/data
+      - ./app:/app/app
+      - ./pipelines:/app/pipelines
+      - ./evaluation:/app/evaluation
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - mcp-server
+    restart: unless-stopped
+
+  # ── 3. Streamlit Frontend ─────────────────────────────────────────────────────
+  # Talks to FastAPI backend over the internal Docker network (no CORS needed).
+  frontend:
+    image: frontend:${APP_VERSION}
+    build:
+      context: .
+      dockerfile: ui/Dockerfile
+    container_name: frontend-${APP_VERSION}
+    ports:
+      - "8501:8501"
+    networks:
+      - rag-net
+    environment:
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+    volumes:
+      - ./ui:/app/ui
+
+  # ── 4. MinIO Object Storage ───────────────────────────────────────────────────
+  minio:
+    image: quay.io/minio/minio
+    container_name: minio
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # MinIO Console
+    environment:
+      MINIO_ROOT_USER: rag-agent
+      MINIO_ROOT_PASSWORD: 89898989
+    volumes:
+      - ./minio/data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - rag-net
+    restart: unless-stopped
+
+  # ── 5. Redis Cache ──────────────────────────────────────────────────────────
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - rag-net
+    restart: unless-stopped
