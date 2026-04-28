@@ -24,8 +24,7 @@ WORKDIR /app
 
 # ── Install main dependencies ──────────────────────────────────────────────────
 COPY pyproject.toml poetry.lock ./
-RUN poetry lock && \
-    poetry install --without mcp,ui --no-root --no-cache
+RUN poetry install --without mcp,ui --no-root --no-cache
 
 # ── Copy application source ────────────────────────────────────────────────────
 COPY app/ ./app/

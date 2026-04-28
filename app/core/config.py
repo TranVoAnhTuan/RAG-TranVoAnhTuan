@@ -56,8 +56,6 @@ class Settings:
     CONTEXT_LENGTH: int = int(os.getenv("CONTEXT_LENGTH", 8000))
     RERANKER_MODEL_NAME: str = os.getenv("RERANKER_MODEL_NAME", "jinaai/jina-reranker-v3")
 
-
-
     # ── Cache ───────────────────────────────────────────────────────
     CACHE_TTL_SECONDS: int = int(os.getenv("CACHE_TTL_SECONDS", 86400))
 

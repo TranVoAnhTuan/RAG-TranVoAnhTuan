@@ -38,8 +38,7 @@ WORKDIR /app
 
 # ── Install only the [mcp] dependency group ────────────────────────────────────
 COPY pyproject.toml poetry.lock ./
-RUN poetry lock && \
-    poetry install --only mcp --no-root --no-cache
+RUN poetry install --only mcp --no-root --no-cache
 
 # ── Copy MCP server source code ────────────────────────────────────────────────
 COPY mcp_server/ ./mcp_server/
