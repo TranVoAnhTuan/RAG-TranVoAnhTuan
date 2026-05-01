@@ -3,6 +3,7 @@ __pycache__/
 .env
 run.txt
 *.pem
+!combined-example.pem
 *.pdf
 .vscode/
 minio/

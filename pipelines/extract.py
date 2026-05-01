@@ -26,7 +26,7 @@ def _process_with_docling(file_path: str) -> str:
     logger.info("Loading Docling...")
     pipeline_options = PdfPipelineOptions()
     pipeline_options.do_ocr = True
-    pipeline_options.do_table_structure = False
+    pipeline_options.do_table_structure = True
     pipeline_options.ocr_options = EasyOcrOptions(lang=["vi", "en"])
     pipeline_options.accelerator_options = AcceleratorOptions(num_threads=6, device="cuda")
 
