@@ -435,7 +435,7 @@ def render_chat() -> None:
     if st.session_state.pending_interrupt:
         st.markdown("### ⚠️ Agent requires your approval")
         for req in st.session_state.pending_interrupt:
-            st.info(f"**Tool:** {req.get('name')}\n\n**Arguments:** {req.get('arguments')}")
+            st.info(f"**Tool:** {req.get('name')}")
         c1, c2 = st.columns(2)
         with c1:
             if st.button("✅ Approve", use_container_width=True, type="primary"):
