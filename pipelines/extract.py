@@ -1,6 +1,8 @@
 import asyncio
+from concurrent.futures import ProcessPoolExecutor
 import gc
 import logging
+import multiprocessing
 import os
 
 import torch
@@ -52,6 +54,9 @@ async def extract_node(state: IngestionState) -> dict:
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"No file found at: {file_path}")
 
-    markdown = await asyncio.to_thread(_process_with_docling, file_path)
+    loop = asyncio.get_running_loop()
+    ctx = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=1, mp_context=ctx) as executor:
+        markdown = await loop.run_in_executor(executor, _process_with_docling, file_path)
 
     return {"raw_text": markdown}
