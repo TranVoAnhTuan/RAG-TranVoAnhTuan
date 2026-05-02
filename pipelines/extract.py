@@ -1,6 +1,8 @@
 import asyncio
+from concurrent.futures import ProcessPoolExecutor
 import gc
 import logging
+import multiprocessing
 import os
 
 import torch
@@ -26,7 +28,7 @@ def _process_with_docling(file_path: str) -> str:
     logger.info("Loading Docling...")
     pipeline_options = PdfPipelineOptions()
     pipeline_options.do_ocr = True
-    pipeline_options.do_table_structure = False
+    pipeline_options.do_table_structure = True
     pipeline_options.ocr_options = EasyOcrOptions(lang=["vi", "en"])
     pipeline_options.accelerator_options = AcceleratorOptions(num_threads=6, device="cuda")
 
@@ -52,6 +54,9 @@ async def extract_node(state: IngestionState) -> dict:
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"No file found at: {file_path}")
 
-    markdown = await asyncio.to_thread(_process_with_docling, file_path)
+    loop = asyncio.get_running_loop()
+    ctx = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=1, mp_context=ctx) as executor:
+        markdown = await loop.run_in_executor(executor, _process_with_docling, file_path)
 
     return {"raw_text": markdown}
