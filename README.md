@@ -62,6 +62,35 @@ An intelligent, multi-service Document Assistant built on an Agentic Retrieval-A
 └── .env                 # Environment variables
 ```
 
+## 🔒 Corporate Proxy & SSL Certificates
+
+If you are working behind a corporate proxy, you may need to provide your corporate CA certificates for the Docker containers to access the internet (e.g., for downloading models or using web search).
+
+1. **Setup:**
+   ```bash
+   cp combined-example.pem combined.pem
+   ```
+2. **Paste your certificates:** Open `combined.pem` and paste your Base64 encoded CA certificates into it.
+
+### How to get certificates on your OS:
+
+#### 🪟 Windows
+1. Press `Win + R`, type `certmgr.msc`, and Enter.
+2. Go to **Trusted Root Certification Authorities** > **Certificates**.
+3. Find your corporate CA, right-click > **All Tasks** > **Export...**
+4. Choose **Base-64 encoded X.509 (.CER)** and rename the exported file to `.pem`.
+
+#### 🍎 macOS
+1. Open **Keychain Access**.
+2. Find your corporate certificate in **System** or **System Roots**.
+3. Right-click and select **Export...**, then choose **Plain Text (.pem)**.
+
+#### 🐧 Ubuntu / Linux
+- Root certificates are usually located at `/etc/ssl/certs/ca-certificates.crt`.
+- You can copy the content of that file or find specific corporate ones in `/usr/local/share/ca-certificates/`.
+
+---
+
 ## 🐳 Running with Docker (Recommended)
 
 The easiest way to run the entire stack (Frontend, Backend, MCP Server, Qdrant, MinIO, Redis, MongoDB) is using Docker Compose.
