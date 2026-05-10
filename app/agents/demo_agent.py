@@ -95,6 +95,7 @@ class DemoAgent:
             api_key="none",
             timeout=60,
             max_retries=2,
+            max_tokens=50000,
         ).bind(parallel_tool_calls=False)
 
         self.memory = MongoDBSaver(mongo_db.client, db_name="checkpointing_db")

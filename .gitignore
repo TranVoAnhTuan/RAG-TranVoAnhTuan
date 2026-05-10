@@ -10,4 +10,4 @@ minio/
 *.db
 *.txt
 testset*.json
-test*.py
+test*.pypyrefly.toml
