@@ -40,6 +40,10 @@ WORKDIR /app
 COPY pyproject.toml poetry.lock ./
 RUN poetry install --only mcp --no-root --no-cache
 
+# ── Pre-download ML models into the image cache ───────────────────────────────
+COPY scripts/download_models.py ./scripts/download_models.py
+RUN python -c "import sys; sys.path.insert(0,'.'); from scripts.download_models import ensure_models_available; ensure_models_available()"
+
 # ── Copy MCP server source code ────────────────────────────────────────────────
 COPY mcp_server/ ./mcp_server/
 

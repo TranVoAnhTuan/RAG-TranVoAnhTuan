@@ -13,7 +13,7 @@ An intelligent, multi-service Document Assistant built on an Agentic Retrieval-A
 * **High-Performance Caching:** Redis application-level caching ensures instant responses for duplicate queries.
 * **VRAM Optimization:** Applies the **Template Method** design pattern to dynamically load models (Dense/Reranker) onto the GPU only during inference, instantly returning them to CPU to conserve VRAM.
 * **Persistent Memory:** Uses MongoDB to store conversation checkpoints, allowing users to pause, resume, or replay past conversational threads.
-* **Clean Code:** Strictly adheres to SRP, DRY, and OOP principles (Facade, Chain of Responsibility, Singleton). Fully typed and linted using `ruff`.
+* **Clean Code:** Strictly adheres to SRP, DRY, and OOP principles (**Facade**, **Repository**, **Chain of Responsibility**). Fully typed and linted using `ruff`.
 
 ## 🛠 Tech Stack
 
@@ -34,94 +34,81 @@ An intelligent, multi-service Document Assistant built on an Agentic Retrieval-A
 ```text
 .
 ├── app/
-│   ├── agents/          # Agent orchestration (DemoAgent Facade, Chain of Responsibility)
+│   ├── agents/          # Agent orchestration (DemoAgent Facade)
 │   ├── api/             # FastAPI Routes (/chat, /upload, /history, /chat/resume)
-│   ├── core/            # App Configuration & ModelManager (GPU Template Method)
+│   ├── core/            # App Configuration & ModelManager
 │   ├── db/              # DB Singletons (MinIO, MongoDB, Qdrant, SQLite)
+│   ├── utils/           # Shared logic (ResponseParser, ThreadRepo, RedisCache)
 │   └── main.py          # FastAPI backend entry point
 ├── mcp_server/          # Standalone Model Context Protocol Server
-│   ├── prompts/         # Centralized System Prompts
-│   ├── tools/           # MCP Tools (search_document_knowledge, tavily_search)
-│   ├── config.py        # MCP Configuration
-│   ├── model_manager.py # Isolated GPU manager for tools
-│   ├── rag_service.py   # Hybrid retrieval & reranking logic
-│   └── server.py        # FastMCP entry point
 ├── pipelines/           # LangGraph PDF Ingestion Pipeline
-│   ├── check_duplicate.py
-│   ├── chunk.py
-│   ├── clean.py
-│   ├── embed.py
-│   ├── extract.py
-│   ├── langgraph_ingestion.py
-│   └── state.py
 ├── ui/
-│   └── app.py           # Streamlit Frontend (Chat, History, HITL approvals)
+│   └── app.py           # Streamlit Frontend
 ├── docker-compose.yml   # Multi-container deployment config
+├── docker-compose.gpu.yml # GPU support overrides
 ├── pyproject.toml       # Poetry dependency management
-├── ruff.toml            # Linter & Formatter configuration
 └── .env                 # Environment variables
 ```
 
 ## 🔒 Corporate Proxy & SSL Certificates
 
-If you are working behind a corporate proxy, you may need to provide your corporate CA certificates for the Docker containers to access the internet (e.g., for downloading models or using web search).
-
-1. **Setup:**
-   ```bash
-   cp combined-example.pem combined.pem
-   ```
-2. **Paste your certificates:** Open `combined.pem` and paste your Base64 encoded CA certificates into it.
-
-### How to get certificates on your OS:
-
-#### 🪟 Windows
-1. Press `Win + R`, type `certmgr.msc`, and Enter.
-2. Go to **Trusted Root Certification Authorities** > **Certificates**.
-3. Find your corporate CA, right-click > **All Tasks** > **Export...**
-4. Choose **Base-64 encoded X.509 (.CER)** and rename the exported file to `.pem`.
-
-#### 🍎 macOS
-1. Open **Keychain Access**.
-2. Find your corporate certificate in **System** or **System Roots**.
-3. Right-click and select **Export...**, then choose **Plain Text (.pem)**.
-
-#### 🐧 Ubuntu / Linux
-- Root certificates are usually located at `/etc/ssl/certs/ca-certificates.crt`.
-- You can copy the content of that file or find specific corporate ones in `/usr/local/share/ca-certificates/`.
+If you are working behind a corporate proxy, you may need to provide your corporate CA certificates:
+1. `cp combined-example.pem combined.pem`
+2. Paste your Base64 encoded CA certificates into `combined.pem`.
 
 ---
 
-## 🐳 Running with Docker (Recommended)
+## 📦 Running Options
 
-The easiest way to run the entire stack (Frontend, Backend, MCP Server, Qdrant, MinIO, Redis, MongoDB) is using Docker Compose.
+### 1. Running with Docker WITH GPU (NVIDIA) 🏎️
+Best performance. Requires **NVIDIA Container Toolkit** installed on your host.
 
-1. **Clone the repository.**
-2. **Configure Environment:** Ensure your `.env` file is present in the root directory (configure LLM endpoints, MinIO keys, etc.).
-3. **Build and Run:**
-   ```bash
-   docker compose up -d --build
-   ```
-4. **Access the Application:**
-   - **Frontend UI:** `http://localhost:8501`
-   - **FastAPI Backend Docs:** `http://localhost:8000/docs`
-   - **MinIO Console:** `http://localhost:9001`
+```bash
+# Build and run with GPU support
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
 
-## 💻 Local Development (Poetry)
+### 2. Running with Docker WITHOUT GPU (CPU Only) 🐌
+Standard run. Models will run on CPU memory.
 
-If you prefer to run services individually for development:
+```bash
+# Standard build and run
+docker compose up -d --build
+```
 
-1. **Install Dependencies:**
-   ```bash
-   poetry install
-   ```
+### 3. Local Development (No Docker) 💻
+Run services individually. Requires Python 3.11+ and **Poetry**.
 
-2. **Lint and Format Code:**
-   ```bash
-   poetry run ruff check .
-   poetry run ruff format .
-   ```
+**Step 1: Install Dependencies**
+```bash
+poetry install
+```
 
-3. **Run Services (Requires DBs to be running locally):**
-   - **Backend:** `poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`
-   - **MCP Server:** `poetry run python -m mcp_server.server`
-   - **Frontend:** `poetry run streamlit run ui/app.py`
+**Step 2: Start Local Databases**
+You need to run the storage services. You can run them all via Docker:
+```bash
+docker compose up redis minio qdrant mongodb -d
+```
+
+**Step 3: Run Application Services**
+Open 3 terminals:
+- **Terminal 1 (Backend):** `poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`
+- **Terminal 2 (MCP Server):** `poetry run python -m mcp_server.server`
+- **Terminal 3 (Frontend):** `poetry run streamlit run ui/app.py`
+
+---
+
+## 🔗 Access URLs
+
+- **Frontend UI:** `http://localhost:8501`
+- **FastAPI Backend Docs:** `http://localhost:8000/docs`
+- **MinIO Console:** `http://localhost:9001`
+- **Qdrant Dashboard:** `http://localhost:6333/dashboard`
+
+## 🛠 Development
+
+**Linting and Formatting:**
+```bash
+poetry run ruff check .
+poetry run ruff format .
+```

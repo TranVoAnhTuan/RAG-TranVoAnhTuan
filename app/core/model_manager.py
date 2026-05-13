@@ -70,23 +70,31 @@ class ModelManager:
         Steps: log → load → move to GPU → yield → move to CPU → clear VRAM.
         Concrete context managers (``use_dense_model_on_gpu``,
         ``use_reranker_model``) delegate here to avoid duplication.
+
+        Falls back to CPU-only inference when CUDA is not available.
         """
         logger.info("=" * 50)
         self._log_vram(f"1. BEFORE LOADING {model_name}")
 
         model = load_fn()
-        model.to("cuda")
-        torch.cuda.empty_cache()
-        self._log_vram(f"2. USING {model_name} (PEAK VRAM)")
+        use_gpu = torch.cuda.is_available()
+
+        if use_gpu:
+            model.to("cuda")
+            torch.cuda.empty_cache()
+            self._log_vram(f"2. USING {model_name} (PEAK VRAM)")
+        else:
+            logger.info(f"⚠️ CUDA not available — running {model_name} on CPU")
 
         try:
             yield model
         finally:
-            logger.info(f"🧹 [GPU] Unloading {model_name} from VRAM...")
-            model.to("cpu")
-            torch.cuda.synchronize()
-            self._clear_vram()
-            self._log_vram(f"3. AFTER CLEANING {model_name}")
+            if use_gpu:
+                logger.info(f"🧹 [GPU] Unloading {model_name} from VRAM...")
+                model.to("cpu")
+                torch.cuda.synchronize()
+                self._clear_vram()
+                self._log_vram(f"3. AFTER CLEANING {model_name}")
             logger.info("=" * 50)
 
     # ------------------------------------------------------------------

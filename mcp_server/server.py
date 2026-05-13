@@ -26,6 +26,28 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+def _ensure_models() -> None:
+    """Pre-download Dense, Reranker, and Sparse models if not cached."""
+    from huggingface_hub import snapshot_download
+
+    from mcp_server.config import mcp_settings
+
+    for name in (mcp_settings.DENSE_MODEL_NAME, mcp_settings.RERANKER_MODEL_NAME):
+        logger.info(f"📦 Checking model: {name} …")
+        snapshot_download(name)
+        logger.info(f"✅ Model ready: {name}")
+
+    logger.info(f"📦 Checking Sparse model: {mcp_settings.SPARSE_MODEL_NAME} …")
+    from fastembed import SparseTextEmbedding
+
+    SparseTextEmbedding(model_name=mcp_settings.SPARSE_MODEL_NAME)
+    logger.info(f"✅ Sparse model ready: {mcp_settings.SPARSE_MODEL_NAME}")
+
+
+# ── Pre-download models at import time ─────────────────────────────────────────
+_ensure_models()
+
 # ── Create FastMCP application ─────────────────────────────────────────────────
 mcp = FastMCP(
     name="RAG Tools Server",

@@ -32,14 +32,6 @@ services:
       # Mount host fastembed cache just in case
       - ~/.local/share/fastembed:/root/.local/share/fastembed
     restart: unless-stopped
-    # GPU access — required for Dense embedding + Jina Reranker inference
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [ gpu ]
 
   # ── 2. FastAPI Backend (Agent Orchestrator / MCP Client) ─────────────────────
   # Owns: DemoAgent (LangGraph), API routes, ingestion pipeline
@@ -72,13 +64,6 @@ services:
       - ./app:/app/app
       - ./pipelines:/app/pipelines
       - ./evaluation:/app/evaluation
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [ gpu ]
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -128,6 +113,30 @@ services:
     container_name: redis
     ports:
       - "6379:6379"
+    networks:
+      - rag-net
+    restart: unless-stopped
+
+  # ── 6. Qdrant Vector Database ──────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+    networks:
+      - rag-net
+    restart: unless-stopped
+
+  # ── 7. MongoDB (Conversation Memory) ───────────────────────────────────
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./mongodb_data:/data/db
     networks:
       - rag-net
     restart: unless-stopped

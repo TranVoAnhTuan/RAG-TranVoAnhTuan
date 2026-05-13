@@ -1,0 +1,20 @@
+services:
+  # Overrides for mcp-server to add GPU support
+  mcp-server:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+
+  # Overrides for backend to add GPU support
+  backend:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]

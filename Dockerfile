@@ -26,6 +26,10 @@ WORKDIR /app
 COPY pyproject.toml poetry.lock ./
 RUN poetry install --without mcp,ui --no-root --no-cache
 
+# ── Pre-download ML models into the image cache ───────────────────────────────
+COPY scripts/ ./scripts/
+RUN python -m scripts.download_models
+
 # ── Copy application source ────────────────────────────────────────────────────
 COPY app/ ./app/
 COPY pipelines/ ./pipelines/

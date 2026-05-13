@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.routes import agent, router
+from scripts.download_models import ensure_models_available
 
 # ── Global Logging Configuration ──────────────────────────────────────────────
 logging.basicConfig(
@@ -19,6 +20,9 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # ── Startup ────────────────────────────────────────────────────────────────
     logger.info("🚀 Starting FastAPI server…")
+
+    # Pre-download models if not already cached.
+    ensure_models_available()
 
     # Open the MCP connection and build the agent graph.
     await agent.connect_mcp()
