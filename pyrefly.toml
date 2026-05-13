@@ -1,0 +1,4 @@
+# Local Pyrefly configuration — DO NOT COMMIT (gitignored)
+# Points Pyrefly to the Poetry venv so it resolves project imports correctly.
+# On each machine, update python-interpreter to match: `poetry env list --full-path`
+python-interpreter = "/home/jacktran/.cache/pypoetry/virtualenvs/testing-Q7NldGKQ-py3.11/bin/python"

@@ -27,6 +27,7 @@ class Settings:
     LLM_MODEL: str = os.getenv("LLM_MODEL", "qwen3.5:2b")
     BASE_URL: str | None = os.getenv("BASE_URL")
     GOOGLE_API_KEY: str | None = os.getenv("GOOGLE_API_KEY")
+    OPENAI_KEY: str | None = os.getenv("OPENAI_KEY")
 
     # ── Qdrant ──────────────────────────────────────────────────────
     QDRANT_URL: str | None = os.getenv("QDRANT_URL")
