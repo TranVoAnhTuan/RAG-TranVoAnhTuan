@@ -19,13 +19,10 @@ services:
       - rag-net
     env_file: .env
     environment:
-      - SSL_CERT_FILE=/app/combined.pem
-      - REQUESTS_CA_BUNDLE=/app/combined.pem
       - HUGGINGFACE_ACCESS_TOKEN=
       - HF_TOKEN=
       - SQLITE_DB_PATH=/app/data/rag_database.db
     volumes:
-      - ./combined.pem:/app/combined.pem:ro
       - ./data:/app/data
       # Mount host HuggingFace cache so the container doesn't need to download models
       - ~/.cache/huggingface:/root/.cache/huggingface
@@ -52,14 +49,11 @@ services:
       # Override to use the Docker service name instead of localhost
       - MCP_SERVER_URL=http://mcp-server:8001/mcp
       - MINIO_ENDPOINT=minio:9000
-      - SSL_CERT_FILE=/app/combined.pem
-      - REQUESTS_CA_BUNDLE=/app/combined.pem
       - REDIS_URL=redis://redis:6379
       - SQLITE_DB_PATH=/app/data/rag_database.db
       # Allow connection to host's Ollama instance
       # Use BASE_URL from .env
     volumes:
-      - ./combined.pem:/app/combined.pem:ro
       - ./data:/app/data
       - ./app:/app/app
       - ./pipelines:/app/pipelines

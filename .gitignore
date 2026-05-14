@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .env
+docker-compose.override.yml
 run.txt
 *.pem
 !combined-example.pem
