@@ -18,7 +18,7 @@ def register_tools(mcp: FastMCP) -> None:
         description="Submit your final response to the user. You MUST call this tool to respond.",
     )
     def submit_final_answer(
-        response: str = Field(default="", description="The natural language answer to the user"),
+        response: str = Field(description="The natural language answer to the user"),
         citations: list[Citation] = Field(
             default_factory=list, description="List of document citations used in the answer"
         ),
