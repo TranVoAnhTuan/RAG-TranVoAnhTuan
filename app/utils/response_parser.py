@@ -139,7 +139,14 @@ class ResponseParser:
         # Handler 1: submit_final_answer tool call
         result = cls.extract_from_submit_tool(turn_messages, tools_used)
         if result is not None:
-            return result
+            if result.get("response") not in ("", "No answer found."):
+                return result
+            # Response is empty – fall through to raw-text extraction while
+            # keeping citations from submit_final_answer.
+            raw_text = cls.extract_raw_text(turn_messages)
+            if raw_text:
+                result["response"] = raw_text
+                return result
 
         # Handler 2 & 3: raw text → JSON parse → plain text fallback
         raw_text = cls.extract_raw_text(turn_messages)

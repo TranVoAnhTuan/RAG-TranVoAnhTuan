@@ -12,3 +12,5 @@ minio/
 *.txt
 testset*.json
 test*.pypyrefly.toml
+mongodb_data/
+qdrant_storage/

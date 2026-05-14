@@ -29,6 +29,10 @@ class Settings:
     GOOGLE_API_KEY: str | None = os.getenv("GOOGLE_API_KEY")
     OPENAI_KEY: str | None = os.getenv("OPENAI_KEY")
 
+    # ── Fallback LLM (DeepSeek) ──────────────────────────────────────
+    DEEPSEEK_API_KEY: str | None = os.getenv("DEEPSEEK_API_KEY", os.getenv("OPENAI_KEY"))
+    DEEPSEEK_BASE_URL: str = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+
     # ── Qdrant ──────────────────────────────────────────────────────
     QDRANT_URL: str | None = os.getenv("QDRANT_URL")
     QDRANT_API_KEY: str | None = os.getenv("QDRANT_API_KEY")
