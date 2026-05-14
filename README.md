@@ -52,27 +52,31 @@ An intelligent, multi-service Document Assistant built on an Agentic Retrieval-A
 
 ## 🔒 Corporate Proxy & SSL Certificates
 
-If you are working behind a corporate proxy, you may need to provide your corporate CA certificates:
+If you are working behind a corporate proxy, you may need to provide your corporate CA certificates and enable the SSL override:
+
 1. `cp combined-example.pem combined.pem`
 2. Paste your Base64 encoded CA certificates into `combined.pem`.
+3. Copy `docker-compose.override.yml.example` to `docker-compose.override.yml` (gitignored — stays on your machine).
+4. Add `-f docker-compose.override.yml` to all `docker compose` commands.
+
+Devices with direct internet access can skip this entirely.
 
 ---
 
 ## 📦 Running Options
 
-### 1. Running with Docker WITH GPU (NVIDIA) 🏎️
-Best performance. Requires **NVIDIA Container Toolkit** installed on your host.
+> **Corporate proxy:** If behind a proxy, add `-f docker-compose.override.yml` to the command (see `docker-compose.override.yml.example` and the [Corporate Proxy](#-corporate-proxy--ssl-certificates) section above).
+
+### 1. With GPU (NVIDIA) 🏎️
+Requires **NVIDIA Container Toolkit** on the host.
 
 ```bash
-# Build and run with GPU support
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 ```
 
-### 2. Running with Docker WITHOUT GPU (CPU Only) 🐌
-Standard run. Models will run on CPU memory.
+### 2. Without GPU (CPU Only) 🐌
 
 ```bash
-# Standard build and run
 docker compose up -d --build
 ```
 

@@ -1,0 +1,18 @@
+# Copy this to docker-compose.override.yml (gitignored) on devices behind a corporate proxy.
+# Include a combined.pem with the proxy's CA certificates in the project root.
+# Docker automatically merges override files — run `docker compose up -d` as usual.
+
+services:
+  mcp-server:
+    environment:
+      - SSL_CERT_FILE=/app/combined.pem
+      - REQUESTS_CA_BUNDLE=/app/combined.pem
+    volumes:
+      - ./combined.pem:/app/combined.pem:ro
+
+  backend:
+    environment:
+      - SSL_CERT_FILE=/app/combined.pem
+      - REQUESTS_CA_BUNDLE=/app/combined.pem
+    volumes:
+      - ./combined.pem:/app/combined.pem:ro

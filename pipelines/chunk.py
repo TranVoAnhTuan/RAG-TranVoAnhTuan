@@ -42,6 +42,11 @@ def chunk_node(state: IngestionState) -> dict:
     markdown_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on, strip_headers=False)
     md_header_splits = markdown_splitter.split_text(text)
 
+    if len(md_header_splits) <= 1:
+        headers_to_split_on = [("###", "Header_1")]
+        markdown_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on, strip_headers=False)
+        md_header_splits = markdown_splitter.split_text(text)
+
     final_data = []
     for doc in md_header_splits:
         sub_chunks = split_by_token_with_paragraph(
