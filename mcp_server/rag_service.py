@@ -134,6 +134,12 @@ class RAGService:
 CONTENT: {content}
 METADATA: {{"Header_1": "{h1}", "Header_2": "{h2}", "file_url": "{f_url}"}}
 """
+        # NOTE: Old data (indexed before MINIO_PUBLIC_ENDPOINT existed) stores
+        # presigned URLs with the internal hostname "minio:9000". Those links
+        # are broken from the browser because the hostname doesn't resolve, and
+        # rewriting them here would also break the MinIO cryptographic signature.
+        # To fix old citations, re-upload and re-index the source PDFs.
+
         logger.info(search_result)
         return search_result
 
