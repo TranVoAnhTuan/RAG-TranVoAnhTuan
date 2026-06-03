@@ -6,6 +6,7 @@ import os
 from concurrent.futures import ProcessPoolExecutor
 
 import torch
+from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
@@ -34,7 +35,11 @@ def _process_with_docling(file_path: str) -> str:
         num_threads=6, device="cuda" if torch.cuda.is_available() else "cpu"
     )
 
-    converter = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
+    converter = DocumentConverter(
+        format_options={
+            InputFormat.PDF: PdfFormatOption(backend=PyPdfiumDocumentBackend, pipeline_options=pipeline_options)
+        }
+    )
     result = converter.convert(file_path)
     markdown_text = result.document.export_to_markdown()
 

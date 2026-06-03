@@ -13,11 +13,27 @@ class MinioClient:
     """Handles file uploads to a MinIO bucket and generates presigned URLs."""
 
     def __init__(self) -> None:
+        region = "us-east-1"
+        # Client for actual API calls — uses the Docker-internal hostname
         self.client = Minio(
             settings.MINIO_ENDPOINT,
             access_key=settings.MINIO_ACCESS_KEY,
             secret_key=settings.MINIO_SECRET_KEY,
             secure=False,  # HTTP for local development
+            region=region,
+        )
+        # Client for generating presigned URLs — uses the browser-accessible
+        # hostname so the cryptographic signature matches the public URL.
+        # NOTE: region must match the internal client so presigned URL
+        # generation is purely local (avoids a network call to discover the
+        # bucket location, which would fail since MinIO isn't listening on
+        # localhost inside the container).
+        self.public_client = Minio(
+            settings.MINIO_PUBLIC_ENDPOINT,
+            access_key=settings.MINIO_ACCESS_KEY,
+            secret_key=settings.MINIO_SECRET_KEY,
+            secure=False,
+            region=region,
         )
         self.bucket_name: str = settings.MINIO_BUCKET_NAME
         self._ensure_bucket()
@@ -31,13 +47,14 @@ class MinioClient:
         """Upload a file and return a presigned URL valid for 7 days."""
         self.client.fput_object(self.bucket_name, object_name, file_path)
 
-        # MinIO caps presigned URL expiry at 7 days
-        url = self.client.presigned_get_object(
+        # Generate the presigned URL against the public hostname so the
+        # cryptographic signature covers localhost:9000 — no host-rewrite
+        # after the fact, which would break the signature.
+        return self.public_client.presigned_get_object(
             self.bucket_name,
             object_name,
             expires=timedelta(days=7),
         )
-        return url
 
 
 minio_client = MinioClient()

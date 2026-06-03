@@ -41,6 +41,7 @@ class Settings:
     # ── SQLite / MinIO ──────────────────────────────────────────────
     SQLITE_DB_PATH: str = os.getenv("SQLITE_DB_PATH", "rag_database.db")
     MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+    MINIO_PUBLIC_ENDPOINT: str = os.getenv("MINIO_PUBLIC_ENDPOINT", "localhost:9000")
     MINIO_ACCESS_KEY: str = os.getenv("MINIO_ACCESS_KEY", "rag-agent")
     MINIO_SECRET_KEY: str = os.getenv("MINIO_SECRET_KEY", "89898989")
     MINIO_BUCKET_NAME: str = os.getenv("MINIO_BUCKET_NAME", "pdfs")

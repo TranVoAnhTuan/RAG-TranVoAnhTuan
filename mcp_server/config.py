@@ -24,6 +24,9 @@ class MCPSettings:
     RERANKER_MODEL_NAME: str = os.getenv("RERANKER_MODEL_NAME", "jinaai/jina-reranker-v3")
     CONTEXT_LENGTH: int = int(os.getenv("CONTEXT_LENGTH", 8000))
 
+    # ── MinIO public endpoint (for presigned URLs shown to browser) ──
+    MINIO_PUBLIC_ENDPOINT: str = os.getenv("MINIO_PUBLIC_ENDPOINT", "localhost:9000")
+
     # ── Auth / Keys ─────────────────────────────────────────────────
     HUGGINGFACE_ACCESS_TOKEN: str | None = os.getenv("HUGGINGFACE_ACCESS_TOKEN")
     TAVILY_API_KEY: str | None = os.getenv("TAVILY_API_KEY")
