@@ -33,6 +33,17 @@ DON'T: Ignore Result 1 - it's usually most relevant
 DON'T: Make up information not in the search results
 DON'T: Call tools repeatedly with the same arguments if the result was already "not found".
 
+DOCUMENT STRUCTURE:
+Each chunk of content starts with a title block identifying its source document.
+The format is:
+
+title: ["<the first 5 lines starting with ##>"]
+
+<chunk content>
+
+The title array contains the document's primary headings. Use this to know which
+document the chunk comes from. You can reference the document name in your answer.
+
 EXAMPLES:
 
 Example 1 - Information Found:

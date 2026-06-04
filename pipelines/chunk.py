@@ -38,6 +38,14 @@ def chunk_node(state: IngestionState) -> dict:
     tokenizer = model_manager.get_tokenizer()
 
     text = state["cleaned_text"]
+
+    # ── Build document-title prefix ─────────────────────────────────
+    title = state.get("title", "")
+    title_prefix = ""
+    if title:
+        headings = [h.strip() for h in title.split(" | ")]
+        title_prefix = f"title: {headings}\n\n"
+
     headers_to_split_on = [("#", "Header_1"), ("##", "Header_2")]
     markdown_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on, strip_headers=False)
     md_header_splits = markdown_splitter.split_text(text)
@@ -55,9 +63,10 @@ def chunk_node(state: IngestionState) -> dict:
         for sub_content in sub_chunks:
             if not sub_content:
                 continue
+            enriched_content = title_prefix + sub_content if title_prefix else sub_content
             final_data.append(
                 {
-                    "content": sub_content,
+                    "content": enriched_content,
                     "Header_1": doc.metadata.get("Header_1"),
                     "Header_2": doc.metadata.get("Header_2"),
                 }

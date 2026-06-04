@@ -85,22 +85,38 @@ class RAGService:
 
         # ── 4. Context-window expansion ───────────────────────────────
         merged_docs_dict = {doc.id: doc for doc in hybrid_results.points}
-        processed_headers = {
-            doc.payload.get("Header_1") for doc in hybrid_results.points if doc.payload.get("Header_1")
+
+        # Collect unique (title, Header_1) pairs — scopes expansion to
+        # the same document *and* section, preventing cross-document
+        # collisions when two documents share identical Header_1 values.
+        processed_sections = {
+            (doc.payload.get("title") or "", doc.payload.get("Header_1"))
+            for doc in hybrid_results.points
+            if doc.payload.get("Header_1")
         }
 
-        for header in processed_headers:
+        for doc_title, header_val in processed_sections:
             try:
+                conditions = [
+                    models.FieldCondition(
+                        key="Header_1",
+                        match=models.MatchValue(value=header_val),
+                    ),
+                ]
+                # Old points may lack the "title" field — fall back to
+                # Header_1-only expansion for backward compatibility.
+                if doc_title:
+                    conditions.insert(
+                        0,
+                        models.FieldCondition(
+                            key="title",
+                            match=models.MatchValue(value=doc_title),
+                        ),
+                    )
+
                 filter_points, _ = await self.client.scroll(
                     collection_name=self.collection_name,
-                    scroll_filter=models.Filter(
-                        must=[
-                            models.FieldCondition(
-                                key="Header_1",
-                                match=models.MatchValue(value=header),
-                            )
-                        ]
-                    ),
+                    scroll_filter=models.Filter(must=conditions),
                     limit=10,
                     with_payload=True,
                 )

@@ -330,6 +330,9 @@ def render_sidebar() -> None:
 
         uploaded_file = st.file_uploader("upload", type=["pdf"], label_visibility="collapsed", key="file_uploader")
         if uploaded_file and st.button("🚀 Process & Index", use_container_width=True, type="primary"):
+            if not uploaded_file.name.lower().endswith(".pdf"):
+                st.error("❌ Only PDF files are supported.")
+                st.stop()
             with st.spinner("Indexing..."):
                 try:
                     res = requests.post(
@@ -403,17 +406,6 @@ def render_chat() -> None:
             f"<div class='welcome-card'><div class='welcome-orb'>⚡</div><div style='margin-bottom:1.25rem;'><span class='topic-badge'>📂 {active}</span></div><h2 class='welcome-title'>What would you like to know?</h2><p class='welcome-sub'>Ask anything — I'll search, rerank, and synthesize an accurate answer with citations.</p></div>",
             unsafe_allow_html=True,
         )
-        cols = st.columns(3)
-        prompts = [
-            ("📊 Summarize findings", "Summarize the key findings."),
-            ("🔍 Main topics?", "What are the main topics?"),
-            ("📋 Key policies", "List the key policies."),
-        ]
-        for col, (label, p) in zip(cols, prompts, strict=False):
-            with col:
-                if st.button(label, key=f"chip_{label}", use_container_width=True):
-                    st.session_state.trigger_send = p
-                    st.rerun()
 
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):

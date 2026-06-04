@@ -18,6 +18,7 @@ async def embed_and_load_node(state: IngestionState) -> dict:
     chunks = state["chunks"]
     minio_url = state.get("minio_url")
     topic = state.get("topic", "General")
+    title = state.get("title", "")
 
     logger.info(f"--- [CHECKPOINT 1] Started embed_and_load_node. Total chunks received: {len(chunks)} ---")
 
@@ -30,6 +31,11 @@ async def embed_and_load_node(state: IngestionState) -> dict:
         await client.create_payload_index(
             collection_name=settings.QDRANT_COLLECTION_NAME,
             field_name="topic",
+            field_schema=models.PayloadSchemaType.KEYWORD,
+        )
+        await client.create_payload_index(
+            collection_name=settings.QDRANT_COLLECTION_NAME,
+            field_name="title",
             field_schema=models.PayloadSchemaType.KEYWORD,
         )
         await db.enable_fast_upload_mode()
@@ -77,6 +83,7 @@ async def embed_and_load_node(state: IngestionState) -> dict:
                         "Header_2": item.get("Header_2"),
                         "file_url": minio_url,
                         "topic": topic,
+                        "title": title,
                     },
                 )
                 points.append(point)
