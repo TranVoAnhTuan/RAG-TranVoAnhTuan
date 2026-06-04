@@ -3,6 +3,7 @@ import gc
 import logging
 import multiprocessing
 import os
+import re
 from concurrent.futures import ProcessPoolExecutor
 
 import torch
@@ -56,6 +57,15 @@ def _process_with_docling(file_path: str) -> str:
     return markdown_text
 
 
+def _extract_title(raw_text: str) -> str:
+    """Extract the first 5 ``##`` headings from Docling raw markdown as a document title."""
+    heading_lines = re.findall(r"^##\s+(.+)", raw_text, re.MULTILINE)
+    selected = heading_lines[:5]
+    if not selected:
+        return ""
+    return " | ".join(selected)
+
+
 async def extract_node(state: IngestionState) -> dict:
     file_path = state["file_path"]
     if not os.path.exists(file_path):
@@ -66,4 +76,4 @@ async def extract_node(state: IngestionState) -> dict:
     with ProcessPoolExecutor(max_workers=1, mp_context=ctx) as executor:
         markdown = await loop.run_in_executor(executor, _process_with_docling, file_path)
 
-    return {"raw_text": markdown}
+    return {"raw_text": markdown, "title": _extract_title(markdown)}

@@ -12,3 +12,4 @@ class IngestionState(TypedDict):
     is_duplicate: bool | None
     minio_url: str | None
     topic: str | None
+    title: str
