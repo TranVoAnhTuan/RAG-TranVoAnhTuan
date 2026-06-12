@@ -9,6 +9,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from app.agents.demo_agent import DemoAgent
+from app.db.minio_client import minio_client
 from app.db.sqlite_db import sqlite_db
 from pipelines.langgraph_ingestion import ingestion_app
 
@@ -60,6 +61,19 @@ async def upload_pdf(file: UploadFile = File(...), topic: str = Form("General"))
     finally:
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
+
+
+@router.post("/storage/ensure-bucket")
+async def ensure_minio_bucket() -> dict:
+    """Verify the MinIO bucket exists, recreating it if missing.
+
+    Useful after MinIO data volume resets or container recreation.
+    """
+    try:
+        minio_client._ensure_bucket_exists()
+        return {"status": "ok", "bucket": minio_client.bucket_name}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/chat")

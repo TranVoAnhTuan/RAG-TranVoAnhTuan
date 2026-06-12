@@ -50,10 +50,18 @@ def chunk_node(state: IngestionState) -> dict:
     markdown_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on, strip_headers=False)
     md_header_splits = markdown_splitter.split_text(text)
 
-    if len(md_header_splits) <= 1:
-        headers_to_split_on = [("###", "Header_1")]
-        markdown_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on, strip_headers=False)
-        md_header_splits = markdown_splitter.split_text(text)
+    # If any section has no header metadata, the document probably uses ###
+    # headings (e.g. after clean.py conversion). Re-split those sections with ###.
+    if any(not d.metadata for d in md_header_splits):
+        h3_splitter = MarkdownHeaderTextSplitter([("###", "Header_1")], strip_headers=False)
+        resolved: list = []
+        for d in md_header_splits:
+            if d.metadata:
+                resolved.append(d)
+            else:
+                sub = h3_splitter.split_text(d.page_content)
+                resolved.extend(sub)
+        md_header_splits = resolved
 
     final_data = []
     for doc in md_header_splits:

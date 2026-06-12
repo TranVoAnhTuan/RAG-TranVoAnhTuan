@@ -3,7 +3,10 @@ FastMCP server entry point for the RAG Tools Service.
 
 Exposes:
   • Tool:   search_document_knowledge  — hybrid RAG retrieval + rerank
+  • Tool:   tavily_search              — web search fallback
+  • Tool:   submit_final_answer        — structured answer delivery
   • Prompt: rag_system_prompt          — system prompt for the agent
+  • Prompt: advisory_skill             — consulting/advisory skill guide
 
 Transport: Streamable HTTP (default FastMCP v2 transport)
   Clients connect to:  http://<host>:8001/mcp
@@ -14,6 +17,7 @@ import logging
 from fastmcp import FastMCP
 
 from mcp_server.prompts.system_prompt import register_prompt
+from mcp_server.tools.consulting_tool import register_advisory_skill
 from mcp_server.tools.final_answer_tool import register_tools as register_final_answer_tool
 from mcp_server.tools.rag_tool import register_tools
 from mcp_server.tools.tavily_tool import register_tavily_tool
@@ -62,6 +66,7 @@ mcp = FastMCP(
 register_tools(mcp)
 register_tavily_tool(mcp)
 register_final_answer_tool(mcp)
+register_advisory_skill(mcp)
 register_prompt(mcp)
 
 

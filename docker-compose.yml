@@ -60,6 +60,7 @@ services:
       - ./app:/app/app
       - ./pipelines:/app/pipelines
       - ./evaluation:/app/evaluation
+      - ~/.EasyOCR:/root/.EasyOCR
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

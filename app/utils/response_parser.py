@@ -64,7 +64,7 @@ class ResponseParser:
         receiving tool output without calling submit_final_answer).
         """
         for m in reversed(turn_messages):
-            if getattr(m, "type", "") == "tool" and getattr(m, "name", "") == "search_document_knowledge":
+            if getattr(m, "type", "") == "tool" and getattr(m, "name", "") in {"search_document_knowledge"}:
                 tool_text = m.content if isinstance(m.content, str) else str(m.content)
                 # Strip METADATA blocks — keep only the readable result text
                 cleaned = re.sub(r"METADATA:\s*\{.*?\}", "", tool_text, flags=re.DOTALL).strip()
@@ -77,7 +77,7 @@ class ResponseParser:
         """Extract citations from search_document_knowledge tool responses."""
         auto_citations: list[dict] = []
         for m in reversed(turn_messages):
-            if getattr(m, "type", "") == "tool" and getattr(m, "name", "") == "search_document_knowledge":
+            if getattr(m, "type", "") == "tool" and getattr(m, "name", "") in {"search_document_knowledge"}:
                 tool_text = m.content if isinstance(m.content, str) else str(m.content)
                 for meta_match in re.finditer(r"METADATA:\s*(\{.*?\})", tool_text):
                     try:
