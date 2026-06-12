@@ -3,10 +3,13 @@
 Singleton pattern: use the module-level ``minio_client`` instance.
 """
 
+import logging
 from datetime import timedelta
 
 from app.core.config import settings
 from minio import Minio
+
+logger = logging.getLogger(__name__)
 
 
 class MinioClient:
@@ -43,8 +46,20 @@ class MinioClient:
         if not self.client.bucket_exists(self.bucket_name):
             self.client.make_bucket(self.bucket_name)
 
+    def _ensure_bucket_exists(self) -> None:
+        """Ensure the bucket exists, creating it on-the-fly if missing.
+
+        Unlike ``_ensure_bucket`` (called once at init), this guard is used
+        before every upload so the system recovers automatically if the
+        MinIO data volume was reset or the bucket was deleted externally.
+        """
+        if not self.client.bucket_exists(self.bucket_name):
+            logger.info("🪣 Bucket '%s' not found — creating it.", self.bucket_name)
+            self.client.make_bucket(self.bucket_name)
+
     def upload_file(self, file_path: str, object_name: str) -> str:
         """Upload a file and return a presigned URL valid for 7 days."""
+        self._ensure_bucket_exists()
         self.client.fput_object(self.bucket_name, object_name, file_path)
 
         # Generate the presigned URL against the public hostname so the
